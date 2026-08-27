@@ -3,9 +3,9 @@ import { makeResult, type VerifyResult } from "@/lib/verify/types";
 // 내 토큰으로 팀 멤버 목록을 조회해 내 uid가 포함됐는지 확인한다.
 // 팀에 속해 있지 않으면 목록 조회 자체가 403 → not_found로 판정.
 export async function verifyVercelMembership(team: string): Promise<VerifyResult> {
-  const token = process.env.VERCEL_API_TOKEN;
+  const token = process.env.MY_VERCEL_TOKEN;
   if (!token) {
-    return makeResult("error", "VERCEL_API_TOKEN이 설정되지 않았습니다");
+    return makeResult("error", "MY_VERCEL_TOKEN이 설정되지 않았습니다");
   }
 
   const headers = { Authorization: `Bearer ${token}` };
