@@ -10,14 +10,18 @@ import { CopyButton } from "@/components/common/copy-button";
 import { CommentThread } from "@/components/comment/comment-thread";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
+import { TabGuide } from "@/components/common/tab-guide";
 import { StepsTable } from "@/app/(admin)/a/[code]/steps-table";
 import { LinkManager } from "@/app/(admin)/a/[code]/link-manager";
 import { ScopeForm } from "@/app/(admin)/a/[code]/scope-form";
 import { SettingsForm } from "@/app/(admin)/a/[code]/settings-form";
 import { GuestManager } from "@/app/(admin)/a/[code]/guest-manager";
 import { OffboardPanel } from "@/app/(admin)/a/[code]/offboard-panel";
+import { ProcessTab } from "@/app/(admin)/a/[code]/process-tab";
+import { MagicLinkPanel } from "@/app/(admin)/a/[code]/magic-link-panel";
 
 const TABS = [
+  { key: "process", label: ko.admin.tabProcess },
   { key: "steps", label: ko.admin.tabSteps },
   { key: "links", label: ko.admin.tabLinks },
   { key: "scope", label: ko.admin.tabScope },
@@ -139,8 +143,11 @@ export default async function AdminProjectPage({
         ))}
       </nav>
 
+      {tab === "process" ? <ProcessTab /> : null}
+
       {tab === "steps" ? (
         <div className="flex flex-col gap-8">
+          <TabGuide items={ko.admin.guide.steps} />
           <StepsTable steps={allSteps} projectCode={code} />
           <CommentThread
             side="admin"
@@ -155,40 +162,51 @@ export default async function AdminProjectPage({
       ) : null}
 
       {tab === "links" ? (
-        <LinkManager
-          links={links ?? []}
-          projectId={project.id}
-          projectCode={code}
-        />
-      ) : null}
-
-      {tab === "scope" ? (
-        <ScopeForm
-          projectId={project.id}
-          projectCode={code}
-          scopeMd={project.scope_md ?? ""}
-          scopeAgreedAt={project.scope_agreed_at}
-          requestsSinceAgreed={requestsSinceAgreed}
-        />
-      ) : null}
-
-      {tab === "settings" ? (
-        <div className="flex max-w-lg flex-col gap-8">
-          <SettingsForm project={project} />
-          <GuestManager
-            guests={guests ?? []}
+        <div className="flex max-w-2xl flex-col gap-5">
+          <TabGuide items={ko.admin.guide.links} />
+          <LinkManager
+            links={links ?? []}
             projectId={project.id}
             projectCode={code}
           />
         </div>
       ) : null}
 
+      {tab === "scope" ? (
+        <div className="flex max-w-3xl flex-col gap-5">
+          <TabGuide items={ko.admin.guide.scope} />
+          <ScopeForm
+            projectId={project.id}
+            projectCode={code}
+            scopeMd={project.scope_md ?? ""}
+            scopeAgreedAt={project.scope_agreed_at}
+            requestsSinceAgreed={requestsSinceAgreed}
+          />
+        </div>
+      ) : null}
+
+      {tab === "settings" ? (
+        <div className="flex max-w-lg flex-col gap-8">
+          <TabGuide items={ko.admin.guide.settings} />
+          <SettingsForm project={project} />
+          <GuestManager
+            guests={guests ?? []}
+            projectId={project.id}
+            projectCode={code}
+          />
+          <MagicLinkPanel guests={guests ?? []} projectId={project.id} />
+        </div>
+      ) : null}
+
       {tab === "close" ? (
-        <OffboardPanel
-          projectId={project.id}
-          projectCode={code}
-          closedAt={project.closed_at}
-        />
+        <div className="flex max-w-2xl flex-col gap-5">
+          <TabGuide items={ko.admin.guide.close} />
+          <OffboardPanel
+            projectId={project.id}
+            projectCode={code}
+            closedAt={project.closed_at}
+          />
+        </div>
       ) : null}
     </main>
   );

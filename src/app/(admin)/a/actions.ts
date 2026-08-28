@@ -2,8 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { isAdminUser } from "@/lib/auth";
 import { STEP_TEMPLATE } from "@/lib/steps";
 import { normalizeSlug } from "@/lib/slug";
 import { ko } from "@/content/ko";
@@ -393,6 +396,77 @@ export async function deleteAdminComment(
   if (error) return { ok: false, message: ko.common.error };
   revalidateProject(parsed.data.code);
   return { ok: true };
+}
+
+// ── 로그인 링크 (매직링크) 생성 ──────────────────────────────────
+// 메일이 늦거나 스팸에 빠질 때, 관리자가 직접 만들어 카톡 등으로 전달한다.
+// service_role을 쓰므로 관리자 여부와 대상 이메일의 프로젝트 소속을
+// 반드시 서버에서 검증한다.
+
+const magicLinkSchema = z.object({
+  projectId: z.uuid(),
+  email: z.email(),
+});
+
+export interface MagicLinkResult {
+  ok: boolean;
+  message?: string;
+  link?: string;
+}
+
+export async function generateGuestMagicLink(
+  input: z.infer<typeof magicLinkSchema>,
+): Promise<MagicLinkResult> {
+  const parsed = magicLinkSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: ko.common.error };
+  const { projectId, email } = parsed.data;
+
+  if (!(await isAdminUser())) {
+    return { ok: false, message: ko.common.unauthorized };
+  }
+
+  // 이 프로젝트의 접근 목록에 있는 이메일만 허용
+  const supabase = await createClient();
+  const { data: guestRow } = await supabase
+    .from("project_guests")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("email", email.toLowerCase())
+    .maybeSingle();
+  if (!guestRow) return { ok: false, message: ko.common.error };
+
+  const headerList = await headers();
+  const host = headerList.get("host");
+  const proto = headerList.get("x-forwarded-proto") ?? "https";
+  const origin =
+    process.env.NEXT_PUBLIC_SITE_URL ?? (host ? `${proto}://${host}` : "");
+
+  const admin = createAdminClient();
+  let { data, error } = await admin.auth.admin.generateLink({
+    type: "magiclink",
+    email: email.toLowerCase(),
+  });
+
+  // 한 번도 로그인한 적 없는 이메일이면 사용자부터 만든다
+  if (error) {
+    const { error: createError } = await admin.auth.admin.createUser({
+      email: email.toLowerCase(),
+      email_confirm: true,
+    });
+    if (createError) return { ok: false, message: ko.common.error };
+    ({ data, error } = await admin.auth.admin.generateLink({
+      type: "magiclink",
+      email: email.toLowerCase(),
+    }));
+  }
+
+  const hashedToken = data?.properties?.hashed_token;
+  if (error || !hashedToken) return { ok: false, message: ko.common.error };
+
+  // Supabase의 action_link 대신 우리 콜백으로 직접 연결한다 —
+  // /auth/callback이 token_hash를 검증하고 역할에 맞게 이동시킨다.
+  const link = `${origin}/auth/callback?token_hash=${hashedToken}&type=magiclink`;
+  return { ok: true, link };
 }
 
 const markReadSchema = z.object({
