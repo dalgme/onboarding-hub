@@ -15,6 +15,9 @@ export default async function ProjectPickerPage() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  if (user.user_metadata?.must_change_password === true) {
+    redirect("/account/password");
+  }
 
   const [{ data: projects }, { data: steps }] = await Promise.all([
     supabase

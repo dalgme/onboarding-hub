@@ -445,10 +445,13 @@ export async function issueGuestPassword(
   const password = generateTempPassword();
   const admin = createAdminClient();
 
+  // must_change_password: 임시 비밀번호 표시 — 로그인하면 새 비밀번호 정하는
+  // 화면이 먼저 뜨고, 본인이 바꾸는 순간 해제된다
   const { error: createError } = await admin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
+    user_metadata: { must_change_password: true },
   });
 
   if (createError) {
@@ -462,7 +465,7 @@ export async function issueGuestPassword(
     if (!existing) return { ok: false, message: ko.common.error };
     const { error: updateError } = await admin.auth.admin.updateUserById(
       existing.id,
-      { password },
+      { password, user_metadata: { must_change_password: true } },
     );
     if (updateError) return { ok: false, message: ko.common.error };
   }

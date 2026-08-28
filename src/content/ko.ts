@@ -46,6 +46,17 @@ export const ko = {
     errorAuth: "접속 링크가 만료되었거나 잘못되었습니다. 담당자에게 새 링크를 요청해 주세요.",
   },
 
+  passwordChange: {
+    title: "새 비밀번호 정하기",
+    description:
+      "임시 비밀번호로 로그인하셨습니다. 앞으로 사용하실 비밀번호를 새로 정해 주세요. 정한 비밀번호는 본인만 알고 계시면 됩니다.",
+    newPasswordLabel: "새 비밀번호 (8자 이상)",
+    confirmLabel: "새 비밀번호 확인",
+    mismatch: "두 비밀번호가 서로 다릅니다.",
+    submit: "저장하고 시작하기",
+    submitting: "저장하는 중…",
+  },
+
   status: {
     project: {
       onboarding: "온보딩",
@@ -357,7 +368,8 @@ export const ko = {
         `아래 주소에서 진행 상황 확인과 요청을 하실 수 있습니다.\n\n` +
         `▶ 주소: ${params.portalUrl}\n` +
         `▶ 이메일: ${params.email}\n` +
-        `▶ 비밀번호: ${params.password}\n\n` +
+        `▶ 임시 비밀번호: ${params.password}\n\n` +
+        `처음 접속하면 새 비밀번호를 정하는 화면이 먼저 나옵니다. 안내에 따라 바꿔 주세요.\n` +
         `주소를 즐겨찾기 해두시면 다음부터 바로 들어오실 수 있습니다.`,
       myPasswordTitle: "내 비밀번호 변경",
       myPasswordHelp: "관리자 계정(내 이메일)의 로그인 비밀번호를 바꾼다.",

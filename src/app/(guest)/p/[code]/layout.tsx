@@ -24,6 +24,10 @@ export default async function GuestLayout({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  // 임시 비밀번호로 로그인한 경우 새 비밀번호부터 정하게 한다
+  if (user.user_metadata?.must_change_password === true) {
+    redirect("/account/password");
+  }
 
   const { data: project } = await supabase
     .from("projects")
