@@ -38,7 +38,7 @@ export const CONNECT_META: Record<string, ConnectMeta> = {
     slugPlaceholder: "예: acme-shop",
     slugHelp:
       "조직을 만들면 주소가 github.com/조직이름 이 됩니다. 그 주소를 통째로 붙여넣으셔도 됩니다.",
-    guideImage: "/guides/github-org.png",
+    guideImage: "/guides/github-org.svg",
   },
   "connect-vercel": {
     provider: "vercel",
@@ -51,7 +51,7 @@ export const CONNECT_META: Record<string, ConnectMeta> = {
     slugPlaceholder: "예: acme-shop",
     slugHelp:
       "팀을 만들면 주소가 vercel.com/팀이름 이 됩니다. 그 주소를 통째로 붙여넣으셔도 됩니다.",
-    guideImage: "/guides/vercel-team.png",
+    guideImage: "/guides/vercel-team.svg",
   },
   "connect-supabase": {
     provider: "supabase",
@@ -64,7 +64,7 @@ export const CONNECT_META: Record<string, ConnectMeta> = {
     slugPlaceholder: "예: abcdefghijklmnop",
     slugHelp:
       "조직 화면의 주소 supabase.com/dashboard/org/여기부분 을 통째로 붙여넣으셔도 됩니다.",
-    guideImage: "/guides/supabase-org.png",
+    guideImage: "/guides/supabase-org.svg",
   },
 };
 
@@ -86,6 +86,8 @@ export const STEP_TEMPLATE: StepTemplate[] = [
 4. **Contact email**에는 본인 이메일을 넣고, "My personal account"를 선택한 뒤 **Next**를 누릅니다.
 5. 멤버 초대 화면이 나오면 일단 **Skip**해도 됩니다 — 초대는 ③에서 따로 안내합니다.
 
+![GitHub 조직 만들기 화면 안내 그림](/guides/github-org.svg)
+
 ### ② 이름 알려주기
 
 만든 조직의 이름을 이 화면에 입력하고 저장합니다. 정확한 이름이 헷갈리면, 조직 화면의 **브라우저 주소를 통째로 복사해 붙여넣으세요**. 자동으로 이름만 골라냅니다.
@@ -96,6 +98,8 @@ export const STEP_TEMPLATE: StepTemplate[] = [
 2. **「초대 화면 열기」** 버튼을 누르면 조직의 사람(People) 화면이 열립니다.
 3. 초록색 **Invite member** 버튼 → 복사한 이메일 붙여넣기 → 검색 결과 선택.
 4. 역할(Role)을 묻는 화면에서 반드시 **Owner** 를 선택하고 **Send invitation**.
+
+![GitHub 초대 화면 안내 그림](/guides/github-invite.svg)
 
 ### ④ 연결 확인
 
@@ -123,6 +127,8 @@ export const STEP_TEMPLATE: StepTemplate[] = [
 3. **Team name** 칸에 팀 이름을 영문으로 입력하고 **Continue**.
 4. 결제(Pro, 월 $20) 안내가 나오면 카드 정보를 등록합니다. 상업 서비스 운영에 필요한 고정비입니다 — 부담되시면 여기서 멈추고 「막혔어요」를 눌러 주세요. 함께 정리해 드립니다.
 
+![Vercel 팀 만들기 화면 안내 그림](/guides/vercel-team.svg)
+
 ### ② 이름 알려주기
 
 만든 팀 이름을 이 화면에 입력하고 저장합니다. 팀 화면의 **브라우저 주소를 통째로 붙여넣으셔도** 됩니다.
@@ -132,6 +138,8 @@ export const STEP_TEMPLATE: StepTemplate[] = [
 1. **「초대할 이메일 복사」** 버튼으로 제 이메일을 복사합니다.
 2. **「초대 화면 열기」** 버튼을 누르면 팀의 멤버(Members) 설정 화면이 열립니다.
 3. **Invite** 버튼 → 이메일 붙여넣기 → 역할(Role)은 **Member** 선택 → 초대 보내기.
+
+![Vercel 초대 화면 안내 그림](/guides/vercel-invite.svg)
 
 ### ④ 연결 확인
 
@@ -159,6 +167,8 @@ export const STEP_TEMPLATE: StepTemplate[] = [
 3. 가입하면 조직(Organization)을 만들라는 화면이 나옵니다. **Name**에 회사나 서비스 이름을 입력하고, 요금제는 **Free**로 두고 만듭니다. (요금제 조정은 나중에 제가 안내드립니다)
 4. "새 프로젝트 만들기" 화면이 나와도 **프로젝트는 만들지 않으셔도 됩니다.** 조직만 있으면 됩니다 — 프로젝트는 제가 만듭니다.
 
+![Supabase 조직 만들기 화면 안내 그림](/guides/supabase-org.svg)
+
 ### ② 이름 알려주기
 
 조직 화면에서 **브라우저 주소창의 주소를 통째로 복사**해 이 화면에 붙여넣고 저장하세요. 주소 속 영문·숫자 조합이 조직 이름인데, 찾기 어려우니 통째로 붙여넣는 것이 가장 확실합니다.
@@ -168,6 +178,8 @@ export const STEP_TEMPLATE: StepTemplate[] = [
 1. **「초대할 이메일 복사」** 버튼으로 제 이메일을 복사합니다.
 2. **「초대 화면 열기」** 버튼을 누르면 조직의 팀(Team) 화면이 열립니다.
 3. **Invite** 버튼 → 이메일 붙여넣기 → 역할(Role)은 **Administrator** 선택 → 초대 보내기.
+
+![Supabase 초대 화면 안내 그림](/guides/supabase-invite.svg)
 
 ### ④ 연결 확인
 

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 480" font-family="'Pretendard','Apple SD Gothic Neo',sans-serif">
+  <rect width="760" height="480" rx="12" fill="#f8f9fa"/>
+  <rect x="0" y="0" width="760" height="40" rx="12" fill="#e9ecef"/>
+  <circle cx="24" cy="20" r="6" fill="#d5dade"/><circle cx="44" cy="20" r="6" fill="#d5dade"/><circle cx="64" cy="20" r="6" fill="#d5dade"/>
+  <rect x="90" y="8" width="420" height="24" rx="12" fill="#ffffff"/>
+  <text x="104" y="24" font-size="13" fill="#5f6b73">supabase.com/dashboard/new</text>
+
+  <rect x="150" y="80" width="460" height="360" rx="12" fill="#ffffff" stroke="#e2e6e9"/>
+  <text x="180" y="128" font-size="20" font-weight="700" fill="#11181c">Create a new organization</text>
+
+  <text x="180" y="172" font-size="13" font-weight="600" fill="#11181c">Name</text>
+  <rect x="180" y="184" width="400" height="42" rx="8" fill="#ffffff" stroke="#e11d48" stroke-width="3"/>
+  <text x="194" y="210" font-size="14" fill="#9aa4ab">회사·서비스 이름 (영문)</text>
+  <circle cx="195" cy="250" r="13" fill="#e11d48"/>
+  <text x="195" y="255" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">1</text>
+
+  <text x="180" y="290" font-size="13" font-weight="600" fill="#11181c">Plan</text>
+  <rect x="180" y="302" width="200" height="42" rx="8" fill="#ffffff" stroke="#e11d48" stroke-width="3"/>
+  <text x="194" y="328" font-size="14" fill="#11181c">Free - $0/month ▾</text>
+  <circle cx="410" cy="323" r="13" fill="#e11d48"/>
+  <text x="410" y="328" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">2</text>
+  <text x="432" y="328" font-size="13" font-weight="700" fill="#e11d48">Free로 두세요</text>
+
+  <rect x="180" y="370" width="220" height="44" rx="8" fill="#3ecf8e" stroke="#e11d48" stroke-width="3"/>
+  <text x="290" y="397" font-size="14" font-weight="600" fill="#0b3d27" text-anchor="middle">Create organization</text>
+  <circle cx="430" cy="392" r="13" fill="#e11d48"/>
+  <text x="430" y="397" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
+  <text x="452" y="397" font-size="13" font-weight="700" fill="#e11d48">클릭하면 끝</text>
+</svg>
