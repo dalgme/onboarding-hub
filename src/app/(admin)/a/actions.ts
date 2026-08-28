@@ -7,7 +7,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminUser } from "@/lib/auth";
-import { STEP_TEMPLATE } from "@/lib/steps";
+import { OPTIONAL_STEP_TEMPLATES, STEP_TEMPLATE } from "@/lib/steps";
 import { normalizeSlug } from "@/lib/slug";
 import { ko } from "@/content/ko";
 import type { ActionResult } from "@/app/(guest)/p/[code]/actions";
@@ -205,6 +205,48 @@ export async function adminSetStepStatus(
     })
     .eq("id", stepId);
 
+  if (error) return { ok: false, message: ko.common.error };
+  revalidateProject(code);
+  return { ok: true };
+}
+
+// 선택 단계(Resend·Solapi 등)를 템플릿에서 복사해 프로젝트에 추가한다
+const optionalStepSchema = z.object({
+  projectId: z.uuid(),
+  code: z.string().min(1),
+  stepKey: z.string().min(1),
+});
+
+export async function addOptionalStep(
+  input: z.infer<typeof optionalStepSchema>,
+): Promise<ActionResult> {
+  const parsed = optionalStepSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: ko.common.error };
+  const { projectId, code, stepKey } = parsed.data;
+
+  const template = OPTIONAL_STEP_TEMPLATES.find(
+    (item) => item.key === stepKey,
+  );
+  if (!template) return { ok: false, message: ko.common.error };
+
+  const supabase = await createClient();
+  const { data: lastStep } = await supabase
+    .from("steps")
+    .select("order_index")
+    .eq("project_id", projectId)
+    .order("order_index", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { error } = await supabase.from("steps").insert({
+    project_id: projectId,
+    order_index: (lastStep?.order_index ?? -1) + 1,
+    key: template.key,
+    title: template.title,
+    description_md: template.description_md,
+    owner_side: template.owner_side,
+    verify_type: template.verify_type,
+  });
   if (error) return { ok: false, message: ko.common.error };
   revalidateProject(code);
   return { ok: true };

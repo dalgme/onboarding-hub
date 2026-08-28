@@ -18,6 +18,7 @@ import { SettingsForm } from "@/app/(admin)/a/[code]/settings-form";
 import { GuestManager } from "@/app/(admin)/a/[code]/guest-manager";
 import { OffboardPanel } from "@/app/(admin)/a/[code]/offboard-panel";
 import { ProcessTab } from "@/app/(admin)/a/[code]/process-tab";
+import { OptionalSteps } from "@/app/(admin)/a/[code]/optional-steps";
 import { AccessPanel } from "@/app/(admin)/a/[code]/access-panel";
 
 const TABS = [
@@ -149,6 +150,11 @@ export default async function AdminProjectPage({
         <div className="flex flex-col gap-8">
           <TabGuide items={ko.admin.guide.steps} />
           <StepsTable steps={allSteps} projectCode={code} />
+          <OptionalSteps
+            projectId={project.id}
+            projectCode={code}
+            existingKeys={allSteps.map((step) => step.key)}
+          />
           <CommentThread
             side="admin"
             comments={comments ?? []}

@@ -3,10 +3,11 @@ import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { CONNECT_META } from "@/lib/steps";
+import { CONNECT_META, SIMPLE_CONNECT_META } from "@/lib/steps";
 import { Markdown } from "@/components/common/markdown";
 import { StepStatusBadge } from "@/components/onboarding/step-status-badge";
 import { ConnectFlow } from "@/components/onboarding/connect-flow";
+import { SimpleConnectPanel } from "@/components/onboarding/simple-connect-panel";
 import { StickyActions } from "@/components/onboarding/sticky-actions";
 import { CommentThread } from "@/components/comment/comment-thread";
 import { ko } from "@/content/ko";
@@ -44,12 +45,13 @@ export default async function StepDetailPage({
     .order("created_at");
 
   const meta = CONNECT_META[step.key];
+  const simpleMeta = SIMPLE_CONNECT_META[step.key];
   const isClosed = project.status === "closed";
   const isClientStep = step.owner_side === "client";
 
   // 초대할 이메일(내 이메일)은 서버에서만 조회한다 — admins는 관리자 전용 RLS
   let inviteEmail = "";
-  if (meta) {
+  if (meta || simpleMeta) {
     const admin = createAdminClient();
     const { data: adminRow } = await admin
       .from("admins")
@@ -91,6 +93,10 @@ export default async function StepDetailPage({
           currentSlug={currentSlug}
           inviteEmail={inviteEmail}
         />
+      ) : null}
+
+      {simpleMeta && isClientStep && !isClosed && step.status !== "verified" ? (
+        <SimpleConnectPanel meta={simpleMeta} inviteEmail={inviteEmail} />
       ) : null}
 
       <CommentThread

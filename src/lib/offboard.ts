@@ -14,15 +14,15 @@ export const OFFBOARD_CHECKLIST: OffboardItem[] = [
   },
   {
     key: "revoke-tokens",
-    title: "발급받은 토큰 폐기",
+    title: "발급받은 토큰·API 키 폐기",
     detail:
-      "GitHub PAT / Vercel 토큰 / Supabase 액세스 토큰을 전부 폐기한다. 멤버 탈퇴보다 반드시 먼저.",
+      "GitHub PAT / Vercel 토큰 / Supabase 액세스 토큰과, 의뢰인 조직에서 내가 발급한 키 중 회수 대상(예: 내 이름으로 만든 테스트 키)을 폐기한다. 멤버 탈퇴보다 반드시 먼저. 서비스가 실제로 쓰는 키(Anthropic API 키 등)는 의뢰인 조직 소유이므로 남긴다.",
   },
   {
     key: "leave-orgs",
-    title: "3개 조직에서 내 멤버 권한 탈퇴",
+    title: "연결된 모든 조직에서 내 멤버 권한 탈퇴",
     detail:
-      "GitHub 조직 · Vercel 팀 · Supabase 조직에서 내 계정을 내보낸다. 토큰 폐기 이후에만.",
+      "GitHub 조직 · Vercel 팀 · Supabase 조직, 그리고 연결했다면 Anthropic Console · Resend · Solapi에서도 내 계정을 내보낸다. 토큰 폐기 이후에만.",
   },
   {
     key: "clean-local",

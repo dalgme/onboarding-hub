@@ -392,6 +392,11 @@ export const ko = {
     },
 
     steps: {
+      optionalTitle: "선택 단계 추가",
+      optionalHelp:
+        "의뢰 내용에 따라 필요한 서비스 연결 단계를 골라 추가한다. 추가하면 의뢰인 포털에 안내와 함께 나타난다. 안내문 수정은 src/lib/steps.ts에서.",
+      optionalAllAdded: "추가할 수 있는 선택 단계를 모두 추가했습니다.",
+      optionalAdding: "추가하는 중…",
       verifyNow: "지금 확인",
       markVerified: "확인 완료로",
       markSkipped: "건너뜀으로",

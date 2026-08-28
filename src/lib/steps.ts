@@ -68,6 +68,77 @@ export const CONNECT_META: Record<string, ConnectMeta> = {
   },
 };
 
+// slug 입력·자동 검증이 필요 없는 단순 연결 단계용 메타 —
+// 딥링크 버튼 + 초대 이메일 복사 + 역할 안내만 제공한다.
+export interface SimpleConnectMeta {
+  serviceName: string;
+  roleName: string;
+  createUrl: string;
+  inviteUrl: string;
+}
+
+export const SIMPLE_CONNECT_META: Record<string, SimpleConnectMeta> = {
+  "connect-anthropic": {
+    serviceName: "Anthropic Console",
+    roleName: "Developer",
+    createUrl: "https://console.anthropic.com/",
+    inviteUrl: "https://console.anthropic.com/settings/members",
+  },
+  "connect-resend": {
+    serviceName: "Resend",
+    roleName: "Admin",
+    createUrl: "https://resend.com/signup",
+    inviteUrl: "https://resend.com/settings/team",
+  },
+  "connect-solapi": {
+    serviceName: "Solapi",
+    roleName: "멤버",
+    createUrl: "https://solapi.com/",
+    inviteUrl: "https://console.solapi.com/",
+  },
+};
+
+// 의뢰 내용에 따라 골라 넣는 선택 단계 (관리 화면 단계 탭에서 추가).
+// 기본 템플릿과 같은 규칙: 여기서 복사해 넣고, 안내문 수정은 이 파일에서.
+export const OPTIONAL_STEP_TEMPLATES: StepTemplate[] = [
+  {
+    key: "connect-resend",
+    title: "Resend(메일 발송) 계정 만들고 초대하기",
+    owner_side: "client",
+    verify_type: "manual",
+    description_md: `서비스가 **메일을 보내는 기능**(가입 확인, 알림 등)을 쓰는 경우에 필요한 계정입니다. 메일 발송량과 발신 신뢰도가 의뢰인 명의로 쌓여야 해서, 처음부터 의뢰인 계정으로 만듭니다.
+
+### 진행 순서
+
+1. 아래 버튼으로 Resend에 가입합니다 (GitHub 계정으로 가입하는 것이 간단합니다).
+2. 팀 초대 화면에서 **「초대할 이메일 복사」** 버튼으로 제 이메일을 복사해 초대하고, 역할은 **Admin**으로 지정해 주세요.
+3. 발신 도메인 인증(DNS 설정)은 기술 작업이라 제가 진행합니다 — 도메인 관리 화면 접근이 필요하면 따로 안내드립니다.
+
+### 자주 막히는 곳
+
+- 무료 요금제(월 3,000건)로 시작하면 됩니다. 발송량이 많아지면 그때 함께 조정합니다.
+- 초대 이메일은 꼭 **복사 버튼**으로 붙여넣어 주세요.`,
+  },
+  {
+    key: "connect-solapi",
+    title: "Solapi(문자·알림톡) 계정 만들기",
+    owner_side: "client",
+    verify_type: "manual",
+    description_md: `서비스가 **문자(SMS)나 카카오 알림톡**을 보내는 경우에 필요한 계정입니다. 발신번호가 의뢰인 명의로 등록되어야 해서 반드시 의뢰인이 직접 만들어야 합니다.
+
+### 진행 순서
+
+1. 아래 버튼으로 Solapi에 가입합니다.
+2. **발신번호 등록**을 진행합니다 — 본인(대표자) 인증이 필요해서 의뢰인만 할 수 있는 절차입니다. 통신서비스 이용증명원 등 서류가 필요할 수 있습니다.
+3. 콘솔의 멤버(팀) 관리에서 제 이메일을 초대해 주세요. 초대 기능을 못 찾겠으면 「화면공유로 도움받기」를 눌러 주세요 — API 연동 설정을 함께 진행합니다.
+
+### 자주 막히는 곳
+
+- 발신번호 등록 심사에 하루 이틀 걸릴 수 있습니다. 미리 해두면 개발 일정이 밀리지 않습니다.
+- 문자 발송은 건당 요금이 선불 충전 방식입니다. 초기 충전은 소액(1~2만 원)이면 충분합니다.`,
+  },
+];
+
 export const STEP_TEMPLATE: StepTemplate[] = [
   {
     key: "connect-github",
@@ -189,6 +260,41 @@ export const STEP_TEMPLATE: StepTemplate[] = [
 
 - 역할을 Developer 등으로 두면 제가 데이터베이스를 만들 수 없습니다. **Administrator**로 지정해 주세요.
 - 조직 이름이 어디 있는지 모르겠으면 그냥 **주소창 주소를 통째로** 붙여넣으세요.`,
+  },
+  {
+    key: "connect-anthropic",
+    title: "Claude(AI) 계정 만들고 초대하기",
+    owner_side: "client",
+    verify_type: "manual",
+    description_md: `서비스의 **AI 기능이 사용하는 계정**입니다. AI 사용료가 처음부터 의뢰인에게 직접 청구되도록, 의뢰인 명의 계정에 만듭니다. 서비스와 데이터처럼 AI 계정도 온전히 의뢰인 소유가 됩니다.
+
+> AI 기능이 없는 의뢰라면 이 단계는 건너뜁니다.
+
+### ① 만들기
+
+1. 아래 파란 버튼을 누르면 **Anthropic Console**(Claude API 관리 화면)이 새 탭으로 열립니다. 이메일 또는 Google 계정으로 가입하면 본인 조직이 자동으로 만들어집니다.
+2. 주의: 평소 쓰시는 **Claude 앱(claude.ai) 구독과는 별개**입니다. 이 계정은 "서비스가 AI를 쓰기 위한" 계정이라 따로 가입해야 합니다.
+3. 왼쪽 메뉴의 **Billing**에서 결제 카드를 등록하고 크레딧을 충전합니다. 사용한 만큼 크레딧에서 차감되는 방식이고, 시작은 소액(예: $5~20)이면 충분합니다.
+
+![Anthropic Console 화면 안내 그림](/guides/anthropic-console.svg)
+
+### ② 초대하기
+
+1. 이 화면의 **「초대할 이메일 복사」** 버튼으로 제 이메일을 복사합니다.
+2. **「초대 화면 열기」** 버튼을 누르면 멤버(Members) 화면이 열립니다.
+3. **Invite** → 이메일 붙여넣기 → 역할(Role)은 **Developer** 선택 → 초대 보내기. Developer는 개발 작업만 가능하고 결제 정보는 만질 수 없는 역할이라 안심하셔도 됩니다.
+
+![Anthropic 초대 화면 안내 그림](/guides/anthropic-invite.svg)
+
+### ③ 이후는 제가
+
+초대를 수락하면 제가 의뢰인 조직에서 API 키를 발급해 서비스에 연결합니다. 키는 의뢰인 조직 소유이므로, 작업 종료 후 제가 빠져도 서비스는 그대로 동작합니다.
+
+### 자주 막히는 곳
+
+- **claude.ai 로그인과 헷갈리는 경우** — 주소가 console.anthropic.com 인지 확인해 주세요.
+- 크레딧 충전 없이 초대만 하면 나중에 AI 기능이 동작하지 않습니다. **충전까지**가 이 단계입니다.
+- 결제 등록이 부담되면 「막혔어요」를 눌러 주세요. 예상 사용료를 먼저 정리해 드립니다.`,
   },
   {
     key: "scope-review",
