@@ -22,14 +22,16 @@ export async function resolveHomePath(): Promise<string | null> {
     .eq("email", user.email)
     .order("created_at", { ascending: false });
 
-  const code = guestRows
-    ?.map((row) => {
+  const codes = (guestRows ?? [])
+    .map((row) => {
       const project = row.projects as unknown as { code: string } | null;
       return project?.code;
     })
-    .find((value): value is string => Boolean(value));
+    .filter((value): value is string => Boolean(value));
 
-  return code ? `/p/${code}` : null;
+  if (codes.length === 0) return null;
+  // 프로젝트가 여럿이면 선택 화면으로
+  return codes.length === 1 ? `/p/${codes[0]}` : "/p";
 }
 
 export async function getAuthedEmail(): Promise<string | null> {

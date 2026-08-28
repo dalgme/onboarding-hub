@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { calcProgress } from "@/lib/progress";
 import { Progress } from "@/components/ui/progress";
 import { buttonVariants } from "@/components/ui/button";
+import { ProjectSwitcher } from "@/components/common/project-switcher";
 import { logout } from "@/app/logout-action";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
@@ -31,23 +32,35 @@ export default async function GuestLayout({
     .maybeSingle();
   if (!project) redirect("/login?error=no_access");
 
-  const [{ data: steps }, { data: pinnedLinks }] = await Promise.all([
-    supabase.from("steps").select("status").eq("project_id", project.id),
-    supabase
-      .from("links")
-      .select("id, label, url")
-      .eq("project_id", project.id)
-      .eq("is_pinned", true)
-      .order("order_index"),
-  ]);
+  const [{ data: steps }, { data: pinnedLinks }, { data: myProjects }] =
+    await Promise.all([
+      supabase.from("steps").select("status").eq("project_id", project.id),
+      supabase
+        .from("links")
+        .select("id, label, url")
+        .eq("project_id", project.id)
+        .eq("is_pinned", true)
+        .order("order_index"),
+      supabase
+        .from("projects")
+        .select("code, name")
+        .order("created_at", { ascending: false }),
+    ]);
 
   const progress = calcProgress(steps ?? []);
+  const switchable = myProjects ?? [];
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-xl flex-col">
       <header className="sticky top-0 z-20 border-b border-border bg-background/95 px-5 pb-4 pt-4 backdrop-blur">
         <div className="flex items-center justify-between gap-3">
-          <span className="truncate text-sm font-semibold">{project.name}</span>
+          {switchable.length > 1 ? (
+            <ProjectSwitcher projects={switchable} currentCode={code} />
+          ) : (
+            <span className="truncate text-sm font-semibold">
+              {project.name}
+            </span>
+          )}
           <form action={logout}>
             <button
               type="submit"
