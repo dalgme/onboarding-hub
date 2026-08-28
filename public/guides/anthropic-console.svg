@@ -31,6 +31,12 @@
   <text x="495" y="320" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">3</text>
   <text x="517" y="320" font-size="13" font-weight="700" fill="#e11d48">충전까지 해야 완료</text>
 
-  <text x="280" y="380" font-size="12" fill="#6b6558">사용한 만큼 크레딧에서 차감됩니다. 시작은 소액이면 충분하고,</text>
-  <text x="280" y="400" font-size="12" fill="#6b6558">예상 사용료가 궁금하면 「막혔어요」로 물어봐 주세요.</text>
+  <rect x="280" y="345" width="380" height="46" rx="8" fill="#fff7ed" stroke="#e11d48" stroke-width="3"/>
+  <text x="294" y="364" font-size="13" font-weight="700" fill="#3d3929">Auto reload (자동 충전)</text>
+  <text x="294" y="382" font-size="12" fill="#6b6558">잔액이 $5 아래로 내려가면 $20 자동 충전</text>
+  <rect x="600" y="356" width="44" height="24" rx="12" fill="#16a34a"/>
+  <circle cx="632" cy="368" r="9" fill="#ffffff"/>
+  <circle cx="295" cy="415" r="13" fill="#e11d48"/>
+  <text x="295" y="420" font-size="14" font-weight="700" fill="#ffffff" text-anchor="middle">4</text>
+  <text x="317" y="420" font-size="13" font-weight="700" fill="#e11d48">자동 충전 반드시 ON — 꺼두면 AI 기능이 멈춥니다</text>
 </svg>
