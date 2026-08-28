@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/common/empty-state";
+import { MyPasswordForm } from "@/app/(admin)/a/my-password-form";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
 import type { ProjectStatus } from "@/lib/database.types";
@@ -153,6 +154,8 @@ export default async function AdminDashboardPage() {
           </table>
         </div>
       )}
+
+      <MyPasswordForm />
     </main>
   );
 }

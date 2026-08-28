@@ -2,7 +2,7 @@
 
 > 지인·소규모 의뢰용 온보딩 관리 도구. 혼자 쓰고, 의뢰인이 손님으로 들어온다.
 > **원칙: 없어도 굴러가는 것은 만들지 않는다.**
-> v0.3 · 2026-08-21
+> v0.4 · 2026-08-28 (인증을 매직링크 → 비밀번호로 변경, 메일 의존 제거)
 
 ---
 
@@ -34,12 +34,13 @@
 ## 2. 기술 스택 (변경 금지)
 
 Next.js App Router + TypeScript strict / Tailwind + shadcn/ui / Pretendard /
-Supabase **ap-northeast-2 (서울)** / Supabase Auth 매직링크 /
+Supabase **ap-northeast-2 (서울)** / Supabase Auth 이메일+비밀번호 /
 React Hook Form + Zod / react-markdown + rehype-sanitize /
 lucide-react / date-fns / Vercel / pnpm
 
-**쓰지 않는 것**: Supabase Storage · 별도 메일 라이브러리(Resend는 Supabase Auth의
-커스텀 SMTP로만) · 크론 · i18n · 상태관리 라이브러리 · 차트 · 결제 SDK · 파일 업로드
+**쓰지 않는 것**: Supabase Storage · 메일 발송(Resend·SMTP 일체 — 접속 정보는
+관리자가 카톡으로 전달) · 크론 · i18n · 상태관리 라이브러리 · 차트 · 결제 SDK ·
+파일 업로드
 
 > 스크린샷 등 안내용 이미지는 `public/guides/`에 커밋한다. 업로드 기능이 아니다.
 
@@ -147,14 +148,19 @@ todo → doing → client_done → verified
 
 ---
 
-## 6. 인증 — 매직링크 하나
+## 6. 인증 — 이메일+비밀번호, 메일 의존 없음
 
-- Supabase Auth `signInWithOtp`만. 비밀번호·소셜·커스텀 인증 없음
+- Supabase Auth `signInWithPassword`. 소셜·커스텀 인증 없음
+- **비밀번호는 관리자가 발급·재발급한다** — `/a/[code]` 설정 탭
+  「접속 정보 발급」이 임시 비밀번호와 안내문(주소+이메일+비밀번호)을 만들어
+  주고, 카톡으로 전달한다. 재발급하면 이전 비밀번호는 무효
+- 보조 수단: 관리자가 생성하는 1회용 로그인 링크(매직링크, 24시간 유효).
+  비밀번호 입력을 어려워하는 의뢰인용 비상 수단
 - 로그인 후 분기: `admins`에 있으면 `/a`, `project_guests`에 있으면 `/p/[code]`
 - **초대 토큰 테이블을 만들지 않는다.** 프로젝트에 의뢰인 이메일을 등록해두고,
-  그 사람이 매직링크로 로그인하면 이메일 매칭으로 접근이 열린다
-- 매직링크 만료는 Supabase 대시보드에서 **24시간**으로 설정
-- 발신은 Supabase Auth 커스텀 SMTP에 Resend 연결 (SPF·DKIM·DMARC 필수)
+  그 이메일로 로그인하면 이메일 매칭으로 접근이 열린다
+- **SMTP를 설정하지 않는다.** 메일을 보내는 경로 자체가 없다 —
+  이메일 기반 셀프 재설정이 세 번 아쉬워지면 그때 Resend를 검토한다
 
 ---
 
@@ -269,7 +275,8 @@ DNS 검증은 만들지 않는다. 도메인은 눈으로 확인한다.
 4. `service_role` 키 클라이언트 노출 (`NEXT_PUBLIC_` 접두 금지)
 5. RLS 없는 테이블
 6. 의뢰인이 `verified`를 쓸 수 있는 정책
-7. 의뢰인 비밀번호·인증코드 수집 (어떤 형태로도)
+7. 의뢰인의 외부 서비스(GitHub·Vercel·Supabase 등) 비밀번호·인증코드 수집
+   (어떤 형태로도 — 이 도구의 로그인 비밀번호와는 별개다)
 8. `any` 타입
 9. `useEffect` + `fetch` (Server Component 사용)
 10. 컴포넌트에 한국어 문자열 직접 삽입 (`ko.ts` 사용 · 단, 단계 안내문은 `steps.ts`)

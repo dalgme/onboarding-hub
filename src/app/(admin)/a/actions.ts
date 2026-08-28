@@ -398,6 +398,101 @@ export async function deleteAdminComment(
   return { ok: true };
 }
 
+// ── 의뢰인 비밀번호 발급·재발급 ──────────────────────────────────
+// 임시 비밀번호를 만들어 카톡으로 전달하는 주 접속 수단.
+// service_role을 쓰므로 관리자 여부와 대상 이메일의 프로젝트 소속을 검증한다.
+
+const passwordIssueSchema = z.object({
+  projectId: z.uuid(),
+  email: z.email(),
+});
+
+export interface PasswordIssueResult {
+  ok: boolean;
+  message?: string;
+  password?: string;
+}
+
+function generateTempPassword(): string {
+  // 헷갈리는 문자(0/O, 1/l/I)를 뺀 12자, 4자 단위 하이픈
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  const chars = Array.from(bytes, (byte) => alphabet[byte % alphabet.length]);
+  return `${chars.slice(0, 4).join("")}-${chars.slice(4, 8).join("")}-${chars.slice(8, 12).join("")}`;
+}
+
+export async function issueGuestPassword(
+  input: z.infer<typeof passwordIssueSchema>,
+): Promise<PasswordIssueResult> {
+  const parsed = passwordIssueSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: ko.common.error };
+  const { projectId } = parsed.data;
+  const email = parsed.data.email.toLowerCase();
+
+  if (!(await isAdminUser())) {
+    return { ok: false, message: ko.common.unauthorized };
+  }
+
+  const supabase = await createClient();
+  const { data: guestRow } = await supabase
+    .from("project_guests")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("email", email)
+    .maybeSingle();
+  if (!guestRow) return { ok: false, message: ko.common.error };
+
+  const password = generateTempPassword();
+  const admin = createAdminClient();
+
+  const { error: createError } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+
+  if (createError) {
+    // 이미 존재하는 사용자면 비밀번호만 교체한다
+    const { data: userList, error: listError } =
+      await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    if (listError) return { ok: false, message: ko.common.error };
+    const existing = userList.users.find(
+      (user) => user.email?.toLowerCase() === email,
+    );
+    if (!existing) return { ok: false, message: ko.common.error };
+    const { error: updateError } = await admin.auth.admin.updateUserById(
+      existing.id,
+      { password },
+    );
+    if (updateError) return { ok: false, message: ko.common.error };
+  }
+
+  return { ok: true, password };
+}
+
+// 관리자 본인 비밀번호 변경 — 본인 세션으로 직접 바꾼다 (admin API 불필요)
+const myPasswordSchema = z.object({
+  newPassword: z.string().min(8, ko.admin.password.tooShort).max(100),
+});
+
+export async function changeMyPassword(
+  input: z.infer<typeof myPasswordSchema>,
+): Promise<ActionResult> {
+  const parsed = myPasswordSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      message: parsed.error.issues[0]?.message ?? ko.common.error,
+    };
+  }
+  const supabase = await createClient();
+  const { error } = await supabase.auth.updateUser({
+    password: parsed.data.newPassword,
+  });
+  if (error) return { ok: false, message: ko.common.error };
+  return { ok: true };
+}
+
 // ── 로그인 링크 (매직링크) 생성 ──────────────────────────────────
 // 메일이 늦거나 스팸에 빠질 때, 관리자가 직접 만들어 카톡 등으로 전달한다.
 // service_role을 쓰므로 관리자 여부와 대상 이메일의 프로젝트 소속을

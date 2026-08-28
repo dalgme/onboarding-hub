@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { MailCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,12 +12,12 @@ import { ko } from "@/content/ko";
 
 const loginSchema = z.object({
   email: z.email(ko.common.invalidEmail),
+  password: z.string().min(1, ko.common.required),
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
 
 export function LoginForm() {
-  const [sent, setSent] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
@@ -29,38 +28,16 @@ export function LoginForm() {
   async function onSubmit(values: LoginValues) {
     setServerError(null);
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await supabase.auth.signInWithPassword({
       email: values.email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-        shouldCreateUser: true,
-      },
+      password: values.password,
     });
     if (error) {
-      setServerError(ko.common.error);
+      setServerError(ko.login.invalidCredentials);
       return;
     }
-    setSent(true);
-  }
-
-  if (sent) {
-    return (
-      <div className="rounded-lg border border-border bg-card p-6">
-        <MailCheck className="size-6 text-success" />
-        <h2 className="mt-3 font-semibold">{ko.login.sentTitle}</h2>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          {ko.login.sentDescription}
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          className="mt-4"
-          onClick={() => setSent(false)}
-        >
-          {ko.login.resend}
-        </Button>
-      </div>
-    );
+    // 루트가 역할(관리자/의뢰인)에 맞는 화면으로 보낸다
+    window.location.assign("/");
   }
 
   return (
@@ -78,12 +55,27 @@ export function LoginForm() {
           <p className="text-sm text-destructive">{errors.email.message}</p>
         ) : null}
       </div>
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="password">{ko.login.passwordLabel}</Label>
+        <Input
+          id="password"
+          type="password"
+          autoComplete="current-password"
+          {...register("password")}
+        />
+        {errors.password ? (
+          <p className="text-sm text-destructive">{errors.password.message}</p>
+        ) : null}
+      </div>
       {serverError ? (
         <p className="text-sm text-destructive">{serverError}</p>
       ) : null}
-      <Button type="submit" disabled={isSubmitting}>
+      <Button type="submit" size="lg" disabled={isSubmitting}>
         {isSubmitting ? ko.login.submitting : ko.login.submit}
       </Button>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        {ko.login.forgotHint}
+      </p>
     </form>
   );
 }

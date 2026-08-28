@@ -18,7 +18,7 @@ import { SettingsForm } from "@/app/(admin)/a/[code]/settings-form";
 import { GuestManager } from "@/app/(admin)/a/[code]/guest-manager";
 import { OffboardPanel } from "@/app/(admin)/a/[code]/offboard-panel";
 import { ProcessTab } from "@/app/(admin)/a/[code]/process-tab";
-import { MagicLinkPanel } from "@/app/(admin)/a/[code]/magic-link-panel";
+import { AccessPanel } from "@/app/(admin)/a/[code]/access-panel";
 
 const TABS = [
   { key: "process", label: ko.admin.tabProcess },
@@ -194,7 +194,12 @@ export default async function AdminProjectPage({
             projectId={project.id}
             projectCode={code}
           />
-          <MagicLinkPanel guests={guests ?? []} projectId={project.id} />
+          <AccessPanel
+            guests={guests ?? []}
+            projectId={project.id}
+            projectCode={code}
+            projectName={project.name}
+          />
         </div>
       ) : null}
 

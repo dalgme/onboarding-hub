@@ -11,7 +11,7 @@
 ## 스택
 
 Next.js App Router · TypeScript strict · Tailwind + shadcn 스타일 컴포넌트 ·
-Supabase (서울 리전) · Supabase Auth 매직링크 · React Hook Form + Zod ·
+Supabase (서울 리전) · Supabase Auth 이메일+비밀번호 · React Hook Form + Zod ·
 react-markdown + rehype-sanitize · Vercel · pnpm
 
 ## 처음 설정
@@ -21,9 +21,9 @@ react-markdown + rehype-sanitize · Vercel · pnpm
    대시보드 SQL 편집기로 실행.
 3. **관리자 등록** — `supabase/seed.sql`의 이메일을 본인 이메일로 바꿔 1회 실행.
 4. **Auth 설정** (Supabase 대시보드)
-   - 매직링크(OTP) 만료: **24시간**
-   - 커스텀 SMTP에 Resend 연결 (SPF·DKIM·DMARC 필수)
+   - Email 로그인(비밀번호) 활성 확인 — SMTP 설정은 불필요
    - Site URL·Redirect URL에 배포 주소와 `/auth/callback` 등록
+     (관리자가 생성하는 1회용 로그인 링크용)
 5. **환경변수** — `.env.example`을 `.env.local`로 복사해 채운다.
    `SUPABASE_SERVICE_ROLE_KEY` 등 서버 전용 키에 `NEXT_PUBLIC_` 접두를 붙이지
    않는다.
@@ -43,7 +43,8 @@ pnpm build
 
 1. `/a/new`에서 프로젝트 생성 → 온보딩 단계가 템플릿(`src/lib/steps.ts`)에서
    복사되고, 의뢰인 이메일이 포털 접근 목록에 등록된다.
-2. 의뢰인은 `/login`에서 등록된 이메일로 매직링크 로그인 → `/p/[code]`.
+2. `/a/[code]` 설정 탭 「접속 정보 발급」으로 임시 비밀번호 안내문을 만들어
+   카톡으로 전달 → 의뢰인은 `/login`에서 이메일+비밀번호로 로그인 → `/p/[code]`.
 3. 계정 연결 단계는 만들기 → 이름 알려주기 → 초대 → 연결 확인 순서의
    미니 스텝퍼로 진행. 검증은 `/api/verify/[type]`이 실제 멤버십을 확인해
    서버에서 기록한다 (`verified` / `not_found` / `error` 3상태).
