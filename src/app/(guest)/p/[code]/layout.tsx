@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { ExternalLink, LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { calcProgress } from "@/lib/progress";
 import { Progress } from "@/components/ui/progress";
 import { buttonVariants } from "@/components/ui/button";
@@ -35,6 +36,15 @@ export default async function GuestLayout({
     .eq("code", code)
     .maybeSingle();
   if (!project) redirect("/login?error=no_access");
+
+  // 접속 기록: 의뢰인이 포털을 열 때마다 마지막 접속 시각을 남긴다
+  // (관리자 이메일은 project_guests에 없어 자동으로 무시된다)
+  const adminDb = createAdminClient();
+  await adminDb
+    .from("project_guests")
+    .update({ last_seen_at: new Date().toISOString() })
+    .eq("project_id", project.id)
+    .eq("email", user.email ?? "");
 
   const [{ data: steps }, { data: pinnedLinks }, { data: myProjects }] =
     await Promise.all([

@@ -51,6 +51,7 @@ export type ProjectGuestRow = {
   id: string;
   project_id: string;
   email: string;
+  last_seen_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -130,7 +131,7 @@ export type Database = {
       project_guests: TableDef<
         ProjectGuestRow,
         { project_id: string; email: string },
-        Partial<Pick<ProjectGuestRow, "email">>
+        Partial<Pick<ProjectGuestRow, "email" | "last_seen_at">>
       >;
       steps: TableDef<
         StepRow,

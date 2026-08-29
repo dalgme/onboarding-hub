@@ -26,20 +26,25 @@ const STATUS_VARIANTS: Record<
 export default async function AdminDashboardPage() {
   const supabase = await createClient();
 
-  const [{ data: projects }, { data: steps }, { data: unreadComments }] =
-    await Promise.all([
-      supabase
-        .from("projects")
-        .select("*")
-        .order("created_at", { ascending: false }),
-      supabase.from("steps").select("project_id, status"),
-      supabase
-        .from("comments")
-        .select("project_id")
-        .eq("author_side", "client")
-        .is("read_at", null)
-        .is("deleted_at", null),
-    ]);
+  const [
+    { data: projects },
+    { data: steps },
+    { data: unreadComments },
+    { data: guestRows },
+  ] = await Promise.all([
+    supabase
+      .from("projects")
+      .select("*")
+      .order("created_at", { ascending: false }),
+    supabase.from("steps").select("project_id, status"),
+    supabase
+      .from("comments")
+      .select("project_id")
+      .eq("author_side", "client")
+      .is("read_at", null)
+      .is("deleted_at", null),
+    supabase.from("project_guests").select("project_id, last_seen_at"),
+  ]);
 
   const unreadByProject = new Map<string, number>();
   for (const comment of unreadComments ?? []) {
@@ -47,6 +52,16 @@ export default async function AdminDashboardPage() {
       comment.project_id,
       (unreadByProject.get(comment.project_id) ?? 0) + 1,
     );
+  }
+
+  // 프로젝트별 의뢰인 마지막 접속 (여러 명이면 가장 최근)
+  const lastSeenByProject = new Map<string, string>();
+  for (const guest of guestRows ?? []) {
+    if (!guest.last_seen_at) continue;
+    const current = lastSeenByProject.get(guest.project_id);
+    if (!current || guest.last_seen_at > current) {
+      lastSeenByProject.set(guest.project_id, guest.last_seen_at);
+    }
   }
 
   return (
@@ -72,6 +87,7 @@ export default async function AdminDashboardPage() {
                 <th className="px-4 py-2.5 font-medium">{ko.admin.tableProgress}</th>
                 <th className="px-4 py-2.5 font-medium">{ko.admin.tableOrgs}</th>
                 <th className="px-4 py-2.5 font-medium">{ko.admin.tableUnread}</th>
+                <th className="px-4 py-2.5 font-medium">{ko.admin.tableLastSeen}</th>
                 <th className="px-4 py-2.5 font-medium">{ko.admin.tableCreated}</th>
               </tr>
             </thead>
@@ -142,6 +158,18 @@ export default async function AdminDashboardPage() {
                         </Badge>
                       ) : (
                         <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {lastSeenByProject.has(project.id) ? (
+                        format(
+                          new Date(lastSeenByProject.get(project.id)!),
+                          "MM.dd HH:mm",
+                        )
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {ko.admin.access.neverSeen}
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">

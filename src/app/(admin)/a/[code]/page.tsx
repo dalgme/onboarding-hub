@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { calcProgress } from "@/lib/progress";
+import { WorkLog } from "@/app/(guest)/p/[code]/work-log";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { CopyButton } from "@/components/common/copy-button";
@@ -76,6 +78,24 @@ export default async function AdminProjectPage({
         .eq("project_id", project.id)
         .order("created_at"),
     ]);
+
+  // 게스트 계정 상태(마지막 로그인·임시 비밀번호 여부) — 인증 서버에서 조회
+  const adminAuth = createAdminClient();
+  const { data: userList } = await adminAuth.auth.admin.listUsers({
+    page: 1,
+    perPage: 1000,
+  });
+  const accountByEmail: Record<
+    string,
+    { lastSignInAt: string | null; tempPassword: boolean }
+  > = {};
+  for (const authUser of userList?.users ?? []) {
+    if (!authUser.email) continue;
+    accountByEmail[authUser.email.toLowerCase()] = {
+      lastSignInAt: authUser.last_sign_in_at ?? null,
+      tempPassword: authUser.user_metadata?.must_change_password === true,
+    };
+  }
 
   const allSteps = steps ?? [];
   const progress = calcProgress(allSteps);
@@ -164,6 +184,21 @@ export default async function AdminProjectPage({
             stepId={null}
             showStepLabels
           />
+          <details className="rounded-lg border border-border px-4 py-3">
+            <summary className="min-h-8 cursor-pointer text-sm font-semibold text-muted-foreground">
+              {ko.admin.access.activityTitle}
+            </summary>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {ko.admin.access.activityHelp}
+            </p>
+            <div className="mt-3">
+              <WorkLog
+                project={project}
+                steps={allSteps}
+                comments={comments ?? []}
+              />
+            </div>
+          </details>
         </div>
       ) : null}
 
@@ -199,6 +234,7 @@ export default async function AdminProjectPage({
             guests={guests ?? []}
             projectId={project.id}
             projectCode={code}
+            accountByEmail={accountByEmail}
           />
           <AccessPanel
             guests={guests ?? []}
