@@ -81,8 +81,8 @@ export const SIMPLE_CONNECT_META: Record<string, SimpleConnectMeta> = {
   "connect-anthropic": {
     serviceName: "Anthropic Console",
     roleName: "Developer",
-    createUrl: "https://console.anthropic.com/",
-    inviteUrl: "https://console.anthropic.com/settings/members",
+    createUrl: "https://platform.claude.com/",
+    inviteUrl: "https://platform.claude.com/settings/members",
   },
   "connect-resend": {
     serviceName: "Resend",
@@ -293,7 +293,7 @@ export const STEP_TEMPLATE: StepTemplate[] = [
 
 ### 자주 막히는 곳
 
-- **claude.ai 로그인과 헷갈리는 경우** — 주소가 console.anthropic.com 인지 확인해 주세요.
+- **claude.ai 로그인과 헷갈리는 경우** — 주소가 platform.claude.com 인지 확인해 주세요.
 - 크레딧 충전 없이 초대만 하면 나중에 AI 기능이 동작하지 않습니다. **충전 + 자동 충전 설정까지**가 이 단계입니다.
 - **자동 충전을 끄면** 어느 날 갑자기 AI 기능이 안 되는 일이 생깁니다. 서비스 오류가 아니라 크레딧 소진이니, 그런 일이 없도록 꼭 켜 주세요.
 - 결제 등록이 부담되면 「막혔어요」를 눌러 주세요. 예상 사용료를 먼저 정리해 드립니다.`,

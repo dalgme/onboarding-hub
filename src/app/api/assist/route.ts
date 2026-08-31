@@ -14,6 +14,9 @@ import {
 } from "@/lib/assist";
 import { ko } from "@/content/ko";
 
+// 검색이 붙으면 응답이 길어질 수 있다. 다만 무한정 매달리게 두지 않는다
+export const maxDuration = 180;
+
 const bodySchema = z.object({
   code: z.string().min(1).max(60),
   stepKey: z.string().min(1).max(60),
@@ -21,7 +24,9 @@ const bodySchema = z.object({
     .array(
       z.object({
         role: z.enum(["user", "assistant"]),
-        content: z.string().min(1).max(ASSIST_MAX_CHARS),
+        // 길이는 거절하지 않고 서버에서 잘라 쓴다 — 한 번 길어진 대화 때문에
+        // 이후 모든 질문이 400으로 막히는 상황을 만들지 않는다
+        content: z.string().min(1).max(ASSIST_MAX_CHARS * 10),
       }),
     )
     .min(1)
@@ -34,8 +39,21 @@ const HOUR = 3_600_000;
 const MINUTE = 60_000;
 const PER_HOUR = 40;
 const PER_MINUTE = 10;
+// 진행 중 표시에는 만료를 둔다. 함수가 중간에 죽으면 finally가 돌지 않아
+// 표시가 남고, 그 의뢰인만 계속 「너무 빠르다」를 보게 된다
+const INFLIGHT_TTL = 200_000;
 const hits = new Map<string, number[]>();
-const inFlight = new Set<string>();
+const inFlight = new Map<string, number>();
+
+function busy(userId: string): boolean {
+  const started = inFlight.get(userId);
+  if (started === undefined) return false;
+  if (Date.now() - started > INFLIGHT_TTL) {
+    inFlight.delete(userId);
+    return false;
+  }
+  return true;
+}
 
 function allow(userId: string): boolean {
   const now = Date.now();
@@ -72,7 +90,7 @@ export async function POST(request: NextRequest) {
   }
 
   // 같은 사람이 동시에 여러 번 던지거나 짧은 시간에 몰아치는 것을 막는다
-  if (inFlight.has(user.id) || !allow(user.id)) {
+  if (busy(user.id) || !allow(user.id)) {
     return NextResponse.json({ reply: ko.assist.tooMany }, { status: 429 });
   }
 
@@ -146,7 +164,10 @@ export async function POST(request: NextRequest) {
   }
   const convo: Anthropic.MessageParam[] = messages
     .slice(firstUser)
-    .map((message) => ({ role: message.role, content: message.content }));
+    .map((message) => ({
+      role: message.role,
+      content: message.content.slice(0, ASSIST_MAX_CHARS),
+    }));
 
   const textOf = (blocks: Anthropic.ContentBlock[]) =>
     blocks
@@ -155,9 +176,12 @@ export async function POST(request: NextRequest) {
       .join("\n")
       .trim();
 
-  inFlight.add(user.id);
+  inFlight.set(user.id, Date.now());
+  // 한 번의 질문이 재시도까지 겹쳐 여러 번 과금되지 않게 재시도를 줄이고,
+  // 한 호출이 무한정 매달리지 않게 시간 상한을 둔다
+  const deadline = Date.now() + 110_000;
   try {
-    const client = new Anthropic();
+    const client = new Anthropic({ timeout: 55_000, maxRetries: 1 });
     const ask = () =>
       client.messages.create({
         model: ASSIST_MODEL,
@@ -182,7 +206,11 @@ export async function POST(request: NextRequest) {
 
     // 검색 루프가 한도에 걸리면 pause_turn으로 돌아온다. 이어받지 않으면
     // "검색만 하고 답은 아직 쓰지 않은" 상태가 그대로 나간다
-    for (let i = 0; i < 2 && response.stop_reason === "pause_turn"; i += 1) {
+    for (
+      let i = 0;
+      i < 2 && response.stop_reason === "pause_turn" && Date.now() < deadline;
+      i += 1
+    ) {
       parts.push(textOf(response.content));
       convo.push({ role: "assistant", content: response.content });
       response = await ask();

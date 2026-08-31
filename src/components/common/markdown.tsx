@@ -1,13 +1,25 @@
 import ReactMarkdown from "react-markdown";
-import rehypeSanitize from "rehype-sanitize";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { cn } from "@/lib/utils";
+
+// 도우미 답변에는 모델이 웹에서 읽어 온 내용이 섞인다.
+// 이미지는 여는 것만으로 외부에 신호가 나가고, 링크는 가짜 로그인 화면으로
+// 데려갈 수 있다. 안내문(단계 설명)과 달리 둘 다 제거하고 글자만 남긴다.
+const chatSchema = {
+  ...defaultSchema,
+  tagNames: (defaultSchema.tagNames ?? []).filter(
+    (tag) => tag !== "img" && tag !== "a",
+  ),
+};
 
 function Markdown({
   children,
   className,
+  variant = "doc",
 }: {
   children: string;
   className?: string;
+  variant?: "doc" | "chat";
 }) {
   return (
     <div
@@ -25,7 +37,13 @@ function Markdown({
         className,
       )}
     >
-      <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{children}</ReactMarkdown>
+      <ReactMarkdown
+        rehypePlugins={[
+          variant === "chat" ? [rehypeSanitize, chatSchema] : rehypeSanitize,
+        ]}
+      >
+        {children}
+      </ReactMarkdown>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { MessageCircleQuestion, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Markdown } from "@/components/common/markdown";
-import { ASSIST_SEND_WINDOW } from "@/lib/assist";
+import { ASSIST_MAX_CHARS, ASSIST_SEND_WINDOW } from "@/lib/assist";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
 
@@ -131,7 +131,7 @@ export function AssistChat({
               )}
             >
               {message.role === "assistant" ? (
-                <Markdown>{message.content}</Markdown>
+                <Markdown variant="chat">{message.content}</Markdown>
               ) : (
                 <span className="whitespace-pre-wrap">{message.content}</span>
               )}
@@ -150,6 +150,7 @@ export function AssistChat({
           <Textarea
             className="min-h-11 flex-1"
             rows={1}
+            maxLength={ASSIST_MAX_CHARS}
             value={input}
             placeholder={ko.assist.placeholder}
             onChange={(event) => setInput(event.target.value)}
@@ -162,10 +163,12 @@ export function AssistChat({
               ) {
                 return;
               }
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                ask(input);
-              }
+              if (event.key !== "Enter" || event.shiftKey) return;
+              // 휴대폰 자판에는 Shift가 없다. Enter를 전송으로 쓰면
+              // 줄을 바꾸려다 질문이 반만 날아간다 — 전송 버튼만 쓴다
+              if (window.matchMedia("(pointer: coarse)").matches) return;
+              event.preventDefault();
+              ask(input);
             }}
           />
           <Button
