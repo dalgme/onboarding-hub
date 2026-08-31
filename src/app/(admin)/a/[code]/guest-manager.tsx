@@ -123,7 +123,7 @@ export function GuestManager({
         </ul>
       )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="flex items-start gap-2">
+      <form noValidate onSubmit={handleSubmit(onSubmit)} className="flex items-start gap-2">
         <div className="flex flex-1 flex-col gap-1.5">
           <Input
             type="email"

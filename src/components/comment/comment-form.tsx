@@ -62,7 +62,7 @@ export function CommentForm({
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-2">
+    <form noValidate onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-2">
       <div className="flex gap-2">
         <Select className="w-28" {...register("kind")}>
           <option value="question">{ko.comments.kindQuestion}</option>

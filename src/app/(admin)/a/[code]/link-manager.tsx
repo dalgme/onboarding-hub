@@ -84,6 +84,7 @@ export function LinkManager({
   return (
     <div className="flex max-w-2xl flex-col gap-6">
       <form
+        noValidate
         onSubmit={handleSubmit(onSubmit)}
         className="flex flex-col gap-3 rounded-lg border border-border p-4"
       >

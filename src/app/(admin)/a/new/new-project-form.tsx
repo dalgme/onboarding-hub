@@ -50,7 +50,7 @@ export function NewProjectForm() {
     message ? <p className="text-sm text-destructive">{message}</p> : null;
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+    <form noValidate onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
         <Label htmlFor="code">{ko.admin.form.code}</Label>
         <Input

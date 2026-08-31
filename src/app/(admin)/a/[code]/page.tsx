@@ -81,10 +81,10 @@ export default async function AdminProjectPage({
 
   // 게스트 계정 상태(마지막 로그인·임시 비밀번호 여부) — 인증 서버에서 조회
   const adminAuth = createAdminClient();
-  const { data: userList } = await adminAuth.auth.admin.listUsers({
-    page: 1,
-    perPage: 1000,
-  });
+  const { data: userList } =
+    tab === "settings"
+      ? await adminAuth.auth.admin.listUsers({ page: 1, perPage: 1000 })
+      : { data: null };
   const accountByEmail: Record<
     string,
     { lastSignInAt: string | null; tempPassword: boolean }
