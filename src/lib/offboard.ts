@@ -30,6 +30,12 @@ export const OFFBOARD_CHECKLIST: OffboardItem[] = [
     detail: "내 컴퓨터에 남은 코드 클론, 환경변수 파일, DB 덤프를 지운다.",
   },
   {
+    key: "revoke-guest",
+    title: "의뢰인 포털 접근 회수",
+    detail:
+      "project_guests에서 의뢰인 이메일 행을 삭제하고, Supabase Auth 대시보드에서 해당 사용자를 삭제한다. 포털·도우미·검증 호출이 한 번에 닫힌다. 비밀번호는 카톡으로 전달했을 뿐 만료가 없으므로, 이 단계를 건너뛰면 접근이 영구히 남는다.",
+  },
+  {
     key: "notify-client",
     title: "의뢰인에게 완료 안내",
     detail:

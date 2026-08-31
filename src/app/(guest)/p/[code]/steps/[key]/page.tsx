@@ -107,12 +107,15 @@ export default async function StepDetailPage({
         stepId={step.id}
       />
 
-      {(meta || simpleMeta) && isClientStep && !isClosed ? (
-        <AssistChat projectCode={code} stepKey={step.key} />
-      ) : null}
-
+      {/* 하단 고정 영역은 하나로 묶는다 — 따로 두면 좁은 화면에서
+          도우미 버튼이 [막혔어요] 위에 겹쳐 앉는다 */}
       {isClientStep && !isClosed ? (
-        <StickyActions step={step} projectId={project.id} projectCode={code} />
+        <div className="sticky bottom-0 z-30 flex flex-col gap-2">
+          {meta || simpleMeta ? (
+            <AssistChat projectCode={code} stepKey={step.key} />
+          ) : null}
+          <StickyActions step={step} projectId={project.id} projectCode={code} />
+        </div>
       ) : null}
     </main>
   );

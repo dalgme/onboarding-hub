@@ -28,6 +28,32 @@ const bodySchema = z.object({
     .max(ASSIST_MAX_TURNS),
 });
 
+// 호출량 제한. 새 테이블을 만들지 않는다(§12) — 인스턴스 메모리에만 둔다.
+// 정확한 쿼터가 목적이 아니라 폭주(재시도 루프·장난)를 막는 것이 목적이다.
+const HOUR = 3_600_000;
+const MINUTE = 60_000;
+const PER_HOUR = 40;
+const PER_MINUTE = 10;
+const hits = new Map<string, number[]>();
+const inFlight = new Set<string>();
+
+function allow(userId: string): boolean {
+  const now = Date.now();
+  if (hits.size > 200) {
+    for (const [key, times] of hits) {
+      if (times.every((time) => now - time >= HOUR)) hits.delete(key);
+    }
+  }
+  const recent = (hits.get(userId) ?? []).filter((time) => now - time < HOUR);
+  if (recent.length >= PER_HOUR) return false;
+  if (recent.filter((time) => now - time < MINUTE).length >= PER_MINUTE) {
+    return false;
+  }
+  recent.push(now);
+  hits.set(userId, recent);
+  return true;
+}
+
 // 도우미 응답. 대화는 저장하지 않는다 — 요청을 처리하고 잊는다.
 export async function POST(request: NextRequest) {
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
@@ -45,13 +71,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  // 같은 사람이 동시에 여러 번 던지거나 짧은 시간에 몰아치는 것을 막는다
+  if (inFlight.has(user.id) || !allow(user.id)) {
+    return NextResponse.json({ reply: ko.assist.tooMany }, { status: 429 });
+  }
+
   const { data: project } = await supabase
     .from("projects")
-    .select("id, name, github_org, vercel_team, supabase_org")
+    .select("id, name, status, github_org, vercel_team, supabase_org")
     .eq("code", code)
     .maybeSingle();
   if (!project) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+  // 종료된 프로젝트는 열람 전용이다. 화면이 도우미를 숨기는 것과 별개로
+  // 서버에서도 막는다 — 의뢰인 비밀번호에는 만료가 없다.
+  if (project.status === "closed") {
+    return NextResponse.json({ reply: ko.assist.closed }, { status: 403 });
   }
 
   const { data: step } = await supabase
@@ -102,33 +138,80 @@ export async function POST(request: NextRequest) {
       : simpleMeta.inviteUrl,
   });
 
+  // 첫 메시지는 반드시 user여야 한다 — assistant로 시작하면 API가 400을 낸다.
+  // 화면이 대화를 잘못 잘라 보내도 여기서 흡수한다.
+  const firstUser = messages.findIndex((message) => message.role === "user");
+  if (firstUser < 0) {
+    return NextResponse.json({ error: "invalid body" }, { status: 400 });
+  }
+  const convo: Anthropic.MessageParam[] = messages
+    .slice(firstUser)
+    .map((message) => ({ role: message.role, content: message.content }));
+
+  const textOf = (blocks: Anthropic.ContentBlock[]) =>
+    blocks
+      .filter((block): block is Anthropic.TextBlock => block.type === "text")
+      .map((block) => block.text)
+      .join("\n")
+      .trim();
+
+  inFlight.add(user.id);
   try {
     const client = new Anthropic();
-    const response = await client.messages.create({
-      model: ASSIST_MODEL,
-      max_tokens: ASSIST_MAX_TOKENS,
-      system,
-      output_config: { effort: "low" },
-      tools: [
-        {
-          type: "web_search_20260209",
-          name: "web_search",
-          max_uses: 3,
-          allowed_domains: ASSIST_SEARCH_DOMAINS,
-        },
-      ],
-      messages: messages.map((m) => ({ role: m.role, content: m.content })),
-    });
+    const ask = () =>
+      client.messages.create({
+        model: ASSIST_MODEL,
+        max_tokens: ASSIST_MAX_TOKENS,
+        system,
+        // Opus 5의 기본값과 같다. 의도를 코드에 남긴다
+        thinking: { type: "adaptive" },
+        output_config: { effort: "low" },
+        tools: [
+          {
+            type: "web_search_20260209",
+            name: "web_search",
+            max_uses: 3,
+            allowed_domains: ASSIST_SEARCH_DOMAINS,
+          },
+        ],
+        messages: convo,
+      });
+
+    const parts: string[] = [];
+    let response = await ask();
+
+    // 검색 루프가 한도에 걸리면 pause_turn으로 돌아온다. 이어받지 않으면
+    // "검색만 하고 답은 아직 쓰지 않은" 상태가 그대로 나간다
+    for (let i = 0; i < 2 && response.stop_reason === "pause_turn"; i += 1) {
+      parts.push(textOf(response.content));
+      convo.push({ role: "assistant", content: response.content });
+      response = await ask();
+    }
 
     if (response.stop_reason === "refusal") {
       return NextResponse.json({ reply: ko.assist.refused });
     }
 
-    const reply = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === "text")
-      .map((block) => block.text)
-      .join("\n")
-      .trim();
+    parts.push(textOf(response.content));
+    const reply = parts.filter(Boolean).join("\n").trim();
+
+    // 잘린 답을 완성된 안내처럼 내보내지 않는다 —
+    // 절차 안내가 중간에 끊기면 아무 안내도 없는 것보다 나쁘다
+    if (
+      response.stop_reason === "max_tokens" ||
+      response.stop_reason === "pause_turn"
+    ) {
+      console.error("[assist] 답변이 잘림", {
+        code,
+        stepKey,
+        stopReason: response.stop_reason,
+      });
+      return NextResponse.json({
+        reply: reply
+          ? `${reply}\n\n${ko.assist.truncated}`
+          : ko.assist.truncated,
+      });
+    }
 
     return NextResponse.json({ reply: reply || ko.assist.empty });
   } catch (cause) {
@@ -136,8 +219,11 @@ export async function POST(request: NextRequest) {
     console.error("[assist] 응답 실패", {
       code,
       stepKey,
+      status: cause instanceof Anthropic.APIError ? cause.status : null,
       message: cause instanceof Error ? cause.message : String(cause),
     });
     return NextResponse.json({ reply: ko.assist.failed });
+  } finally {
+    inFlight.delete(user.id);
   }
 }

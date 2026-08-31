@@ -5,6 +5,7 @@ import { MessageCircleQuestion, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Markdown } from "@/components/common/markdown";
+import { ASSIST_SEND_WINDOW } from "@/lib/assist";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
 
@@ -49,7 +50,8 @@ export function AssistChat({
         body: JSON.stringify({
           code: projectCode,
           stepKey,
-          messages: next.slice(-12),
+          // 홀수 창으로 잘라야 첫 메시지가 user로 남는다 (assist.ts 주석 참고)
+          messages: next.slice(-ASSIST_SEND_WINDOW),
         }),
       });
       const data = (await response.json()) as { reply?: string };
@@ -66,11 +68,11 @@ export function AssistChat({
 
   if (!open) {
     return (
-      <div className="sticky bottom-24 z-30 flex justify-end">
+      <div className="pointer-events-none flex justify-end">
         <Button
           type="button"
           variant="secondary"
-          className="shadow-lg"
+          className="pointer-events-auto shadow-lg"
           onClick={() => setOpen(true)}
         >
           <MessageCircleQuestion className="size-4" />
@@ -152,6 +154,14 @@ export function AssistChat({
             placeholder={ko.assist.placeholder}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
+              // 한글 입력 중의 Enter는 「조합 확정」이지 전송이 아니다.
+              // 막지 않으면 마지막 글자가 입력창에 남거나 미완성으로 전송된다
+              if (
+                event.nativeEvent.isComposing ||
+                event.nativeEvent.keyCode === 229
+              ) {
+                return;
+              }
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
                 ask(input);

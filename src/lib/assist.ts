@@ -2,8 +2,16 @@
 // 대화 내용은 어디에도 저장하지 않는다 — 화면을 닫으면 사라진다.
 
 export const ASSIST_MODEL = "claude-opus-5";
-export const ASSIST_MAX_TOKENS = 1500;
+// max_tokens는 답변 길이 손잡이가 아니라 안전 상한이다. Opus 5는 생각하기가
+// 기본으로 켜져 있고 max_tokens가 (생각 + 답변) 합계의 상한이라, 답변 길이에
+// 맞춰 조이면 생각 단계에서 예산이 떨어져 빈 답이 돌아온다.
+// 답변 길이는 시스템 프롬프트("3~6줄")로만 통제한다.
+export const ASSIST_MAX_TOKENS = 16000;
 export const ASSIST_MAX_TURNS = 12;
+// 서버로 보내는 대화 창의 크기. 반드시 홀수여야 한다 —
+// 대화는 user로 시작해 user로 끝나므로 길이가 항상 홀수이고,
+// 짝수로 자르면 첫 메시지가 assistant가 되어 API가 400을 낸다.
+export const ASSIST_SEND_WINDOW = 11;
 export const ASSIST_MAX_CHARS = 2000;
 
 // 최신 화면(메뉴명·위치)이 바뀌었을 수 있으니 공식 문서에서만 확인하게 한다

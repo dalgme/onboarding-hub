@@ -45,7 +45,9 @@ export async function POST(
 
   const { data: step } = await supabase
     .from("steps")
-    .select("id, verify_type, project_id, projects(github_org, vercel_team, supabase_org)")
+    .select(
+      "id, verify_type, project_id, projects(status, github_org, vercel_team, supabase_org)",
+    )
     .eq("id", bodyParsed.data.stepId)
     .maybeSingle();
 
@@ -57,6 +59,7 @@ export async function POST(
   }
 
   const project = step.projects as unknown as {
+    status: string;
     github_org: string | null;
     vercel_team: string | null;
     supabase_org: string | null;
