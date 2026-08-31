@@ -87,7 +87,6 @@ export default async function StepDetailPage({
       {meta && isClientStep && !isClosed ? (
         <ConnectFlow
           step={step}
-          meta={meta}
           projectId={project.id}
           projectCode={code}
           currentSlug={currentSlug}

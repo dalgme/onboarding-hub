@@ -11,7 +11,7 @@ import { SlugInput } from "@/components/onboarding/slug-input";
 import { VerifyBadge } from "@/components/onboarding/verify-badge";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
-import type { ConnectMeta } from "@/lib/steps";
+import { CONNECT_META } from "@/lib/steps";
 import type { StepRow, VerifyResult } from "@/lib/database.types";
 
 type Stage = "create" | "slug" | "invite" | "verify";
@@ -29,19 +29,20 @@ const STAGE_LABELS: Record<Stage, string> = {
 // 앞 단계(만들기 → 이름 → 초대 → 확인)가 끝나야 다음이 나타난다.
 export function ConnectFlow({
   step,
-  meta,
   projectId,
   projectCode,
   currentSlug,
   inviteEmail,
 }: {
   step: StepRow;
-  meta: ConnectMeta;
   projectId: string;
   projectCode: string;
   currentSlug: string | null;
   inviteEmail: string;
 }) {
+  // 함수가 포함된 메타는 서버에서 prop으로 넘기지 못한다(직렬화 불가) —
+  // 클라이언트에서 step.key로 직접 조회한다.
+  const meta = CONNECT_META[step.key];
   const router = useRouter();
   const [stage, setStage] = useState<Stage>(currentSlug ? "invite" : "create");
   const [verifying, startVerify] = useTransition();
@@ -50,6 +51,8 @@ export function ConnectFlow({
   );
 
   const isVerified = step.status === "verified";
+
+  if (!meta) return null;
 
   function runVerify() {
     startVerify(async () => {
