@@ -36,7 +36,11 @@
 Next.js App Router + TypeScript strict / Tailwind + shadcn/ui / Pretendard /
 Supabase **ap-northeast-2 (서울)** / Supabase Auth 이메일+비밀번호 /
 React Hook Form + Zod / react-markdown + rehype-sanitize /
-lucide-react / date-fns / Vercel / pnpm
+lucide-react / date-fns / Vercel **함수 리전 icn1(서울)** / pnpm /
+`@anthropic-ai/sdk` (온보딩 도우미 챗봇 전용)
+
+> Vercel 기본 리전은 미국 동부다. DB가 서울이므로 `vercel.json`에서
+> `regions: ["icn1"]`을 반드시 유지한다 — 안 그러면 클릭마다 태평양을 왕복한다.
 
 **쓰지 않는 것**: Supabase Storage · 메일 발송(Resend·SMTP 일체 — 접속 정보는
 관리자가 카톡으로 전달) · 크론 · i18n · 상태관리 라이브러리 · 차트 · 결제 SDK ·
@@ -246,6 +250,25 @@ DNS 검증은 만들지 않는다. 도메인은 눈으로 확인한다.
 
 **역방향 구축(내가 만들고 이관)은 채택하지 않는다.** Vercel은 인테그레이션·Blob·
 로그가 안 옮겨지고, Supabase는 GitHub 연동이 붙는 순간 이관 자체가 막힌다.
+
+### 온보딩 도우미 (계정 연결 단계 전용 AI 챗봇)
+
+연결 단계 화면에서만 뜨는 「도우미에게 물어보기」 시트. Claude API로
+"지금 어느 메뉴를 누르면 되는지"를 답한다. 화면 구성은 수시로 바뀌므로
+web search(공식 문서 도메인 한정)로 최신 상태를 확인해 답하게 한다.
+
+- **대화를 저장하지 않는다** — 메모리에만 두고, DB·localStorage 어디에도 쓰지 않는다.
+  "의뢰인 작업 과정을 기록하지 않는다"는 원칙을 코드로 지킨 것
+- 서버는 현재 단계·저장된 slug·검증 상태만 컨텍스트로 넘긴다
+- 시스템 프롬프트에 **비밀번호·인증코드·API 키를 묻지 않는다**를 못박는다
+- 키(`ANTHROPIC_API_KEY`)가 없으면 도우미만 조용히 비활성. 온보딩은 그대로 동작
+- 이것은 §12의 「실시간 채팅」이 아니다. 사람 간 소통은 여전히 질문·요청 코멘트 하나뿐
+
+### 오류 처리 — 의뢰인이 당황하지 않게
+
+- 화면 오류는 `error.tsx`가 안심 문구로 받고, `/api/client-error`로 보고한다
+- 보고는 **서버 로그(Vercel 런타임 로그)** 로만 간다. 오류 로그 테이블을 만들지 않는다
+- 원인 분석·수정·배포는 그 로그를 보고 사람이 한다 (실제로 이 경로로 버그를 잡았다)
 
 ### 추가 연결 단계 (기본 3개 외)
 

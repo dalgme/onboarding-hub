@@ -8,6 +8,7 @@ import { Markdown } from "@/components/common/markdown";
 import { StepStatusBadge } from "@/components/onboarding/step-status-badge";
 import { ConnectFlow } from "@/components/onboarding/connect-flow";
 import { SimpleConnectPanel } from "@/components/onboarding/simple-connect-panel";
+import { AssistChat } from "@/components/onboarding/assist-chat";
 import { StickyActions } from "@/components/onboarding/sticky-actions";
 import { CommentThread } from "@/components/comment/comment-thread";
 import { ko } from "@/content/ko";
@@ -105,6 +106,10 @@ export default async function StepDetailPage({
         projectCode={code}
         stepId={step.id}
       />
+
+      {(meta || simpleMeta) && isClientStep && !isClosed ? (
+        <AssistChat projectCode={code} stepKey={step.key} />
+      ) : null}
 
       {isClientStep && !isClosed ? (
         <StickyActions step={step} projectId={project.id} projectCode={code} />
