@@ -45,7 +45,9 @@ export function ConnectFlow({
   // 클라이언트에서 step.key로 직접 조회한다.
   const meta = CONNECT_META[step.key];
   const router = useRouter();
-  const [stage, setStage] = useState<Stage>(currentSlug ? "invite" : "create");
+  const [stage, setStage] = useState<Stage>(
+    step.status === "client_done" ? "verify" : currentSlug ? "invite" : "create",
+  );
   const [verifying, startVerify] = useTransition();
   const [lastResult, setLastResult] = useState<VerifyResult | null>(
     step.verify_result,

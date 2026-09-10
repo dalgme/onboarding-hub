@@ -39,7 +39,7 @@ export function ProjectStatus({
         step.status === "client_done" &&
         (step.verify_result?.code === "await_admin_first" ||
           step.verify_result?.code === "await_admin_ack" ||
-          step.verify_result?.admin_first_ack === "not_came"),
+          (step.verify_result?.admin_first_ack === "not_came" && step.verify_result?.code === "check_invite")),
     )
     .map((step) => ({
       stepId: step.id,
@@ -47,6 +47,7 @@ export function ProjectStatus({
       title: step.title,
       hoursWaiting: differenceInHours(new Date(), new Date(step.verify_result?.first_failed_at ?? step.checked_at ?? step.updated_at)),
       notCame: step.verify_result?.admin_first_ack === "not_came",
+      came: step.verify_result?.admin_first_ack === "came",
     }));
 
   const lastSeen = guests

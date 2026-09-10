@@ -128,14 +128,14 @@ async function remindAdminWaits(now: Date): Promise<number> {
     if (!result || !project) continue;
     const code = result.code;
     if (code !== "pending_accept" && code !== "await_admin_first" && code !== "await_admin_ack") continue;
-    if (result.admin_first_ack === "not_came") continue;
+    if (result.admin_first_ack === "not_came" || result.admin_first_ack === "came") continue;
     const since = new Date(result.first_failed_at ?? row.checked_at ?? result.checked_at).getTime();
     if (now.getTime() - since < ADMIN_WAIT_REMIND_MS) continue;
     const days = Math.floor((now.getTime() - since) / (24 * 60 * 60_000));
     const service = CONNECT_META[row.key]?.serviceName ?? SIMPLE_CONNECT_META[row.key]?.serviceName ?? row.title;
     const outcome = await pushAdmin({
       dedupeKey: `await_admin:${row.id}:${dayKst(now)}`,
-      kind: "escalation",
+      kind: "verify_event", // escalation 은 프로젝트·일 단위 상한 인덱스에 걸린다 — 단계별 재알림은 여기 두지 않는다
       projectId: project.id,
       stepId: row.id,
       ...ko.push.adminWait(project.name, service, days, days >= 5),
@@ -164,9 +164,19 @@ async function digestUnacked(now: Date): Promise<boolean> {
     .limit(50);
   const urgent = (rows ?? []).filter((row) => /:(need_help|blocked):|:comment:/.test(row.dedupe_key));
   if (urgent.length === 0) return false;
-  const bucket = Math.floor(new Date(now.getTime() + 9 * 60 * 60_000).getUTCHours() / DIGEST_EVERY_HOURS);
+  // 마지막 다이제스트로부터 4시간 — 시각 버킷 경계에서 두 번 나가지 않게
+  const { data: last } = await admin
+    .from("notices")
+    .select("created_at")
+    .eq("kind", "digest")
+    .eq("channel", "push")
+    .in("status", ["claimed", "sent"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (last && now.getTime() - new Date(last.created_at).getTime() < DIGEST_EVERY_HOURS * 60 * 60_000) return false;
   const outcome = await pushAdmin({
-    dedupeKey: `todo_digest:${dayKst(now)}:${bucket}`,
+    dedupeKey: `todo_digest:${minuteOf(now)}`,
     kind: "digest",
     ...ko.push.digest(urgent.length),
     url: "/a",

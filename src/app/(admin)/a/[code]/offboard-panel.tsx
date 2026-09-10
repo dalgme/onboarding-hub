@@ -116,9 +116,12 @@ export function OffboardPanel({
                   </span>
                   {item.key === "revoke-guest" ? (
                     <span className="mt-1.5 flex flex-wrap items-center gap-2">
-                      <Button type="button" size="sm" variant="outline" disabled={pending} onClick={revoke}>
+                      <Button type="button" size="sm" variant="outline" disabled={pending || checkedCount < index} onClick={revoke}>
                         {ko.admin.offboard.revokeButton}
                       </Button>
+                      {checkedCount < index ? (
+                        <span className="text-xs text-muted-foreground">{ko.admin.offboard.revokeOrder}</span>
+                      ) : null}
                       {revokeNote ? <span className="text-xs text-muted-foreground">{revokeNote}</span> : null}
                     </span>
                   ) : null}

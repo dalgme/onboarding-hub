@@ -84,15 +84,27 @@ function withSchedule(
   computed: VerifyResult,
   previous: VerifyResult | null,
   trigger: VerifyTrigger,
+  countsAsAttempt: boolean,
 ): VerifyResult {
   if (computed.status === "verified") return computed;
   let result = computed;
   // 내가 「안 왔음」을 눌렀으면 API 가 여전히 「구분 불가」라고 해도 의뢰인 원인(check_invite)으로 본다.
   // 초대가 실제로 오면 pending_accept·verified 로 바뀌므로 그때 풀린다
-  if (previous?.admin_first_ack === "not_came" && result.code === "await_admin_first") {
+  if (
+    previous?.admin_first_ack === "not_came" &&
+    result.code === "await_admin_first" &&
+    !(trigger === "client" && countsAsAttempt)
+  ) {
     result = { ...classify("check_invite", result.detail), checked_at: result.checked_at };
   }
-  if (previous?.admin_first_ack && result.status === "not_found") {
+  // 내가 누른 「왔음/안 왔음」은 일시 오류 한 번에 사라지면 안 된다.
+  // 단, 의뢰인이 다시 「완료했습니다」를 누르면 새 사이클이다 — 내 메일함을 다시 봐야 한다
+  // 초대가 실제로 보이기 시작하면(pending_accept) 「왔음/안 왔음」 판단은 끝난 일이다
+  if (
+    previous?.admin_first_ack &&
+    result.code !== "pending_accept" &&
+    !(trigger === "client" && countsAsAttempt)
+  ) {
     result = { ...result, admin_first_ack: previous.admin_first_ack };
   }
   // 최초 실패 시각은 「같은 원인이 이어지는 동안」 유지한다. 중간에 낀 일시 오류(error)는
@@ -103,7 +115,8 @@ function withSchedule(
     (result.status === "error" ||
       previous.status === "error" ||
       (previous.code ?? null) === (result.code ?? null));
-  const clientAttempts = (previous?.client_attempts ?? 0) + (trigger === "client" ? 1 : 0);
+  // 「완료했습니다」만 센다 — 완료 전 「연결 확인하기」 클릭은 의뢰인 스스로 보는 확인이다
+  const clientAttempts = (previous?.client_attempts ?? 0) + (trigger === "client" && countsAsAttempt ? 1 : 0);
   const autoChecks =
     trigger === "client" ? 0 : (previous?.auto_checks ?? 0) + (trigger === "auto" ? 1 : 0);
   const delay = BACKOFF_MS[Math.min(autoChecks, BACKOFF_MS.length - 1)];
@@ -128,7 +141,7 @@ export async function runVerification(
   const project = step.projects;
 
   const computed = await compute(step.verify_type, project[SLUG_COLUMN[step.verify_type]]);
-  const result = withSchedule(computed, step.verify_result, trigger);
+  const result = withSchedule(computed, step.verify_result, trigger, step.status === "client_done");
 
   const admin = createAdminClient();
   const update =
@@ -288,7 +301,8 @@ export async function reverifyStale(options: {
 export async function markAwaitAdminAck(stepId: string): Promise<void> {
   const step = await loadStep(stepId);
   if (!step || !ADMIN_ACK_KEYS.has(step.key) || step.status !== "client_done") return;
-  if (step.verify_result?.code === "await_admin_ack") return;
+  // 「안 왔음」 뒤 의뢰인이 다시 완료를 눌렀다 = 초대를 다시 보냈다는 뜻 — 내 확인 차례로 되돌린다
+  if (step.verify_result?.code === "await_admin_ack" && !step.verify_result.admin_first_ack) return;
   const admin = createAdminClient();
   await admin
     .from("steps")

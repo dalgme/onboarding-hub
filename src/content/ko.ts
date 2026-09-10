@@ -419,6 +419,7 @@ export const ko = {
       notCame: "안 왔음",
       waiting: (hours: number) => `완료 요청 ${hours}시간 전`,
       waitingClient: "「안 왔음」 처리됨 — 의뢰인 재확인 대기",
+      acceptedWaiting: "수락했음 — API 반영 대기 (자동으로 다시 확인 중)",
       cameDone: "확인 완료로 처리했다.",
       notYet: "수락했음으로 기록했다. API 에서는 아직 안 보인다 — 수락 반영까지 몇 분 걸린다. tick 이 자동으로 다시 본다.",
       notCameDone: "의뢰인 원인으로 전환했다. 「보낼 카톡」에 초대 확인 부탁 문구를 올렸다.",
@@ -572,6 +573,7 @@ export const ko = {
       pendingAccept: (service: string) => `${service} 초대 수락 필요 (내 메일함)`,
       checkInvite: (service: string) => `${service} 초대 확인 필요`,
       awaitAdmin: (service: string, hours: number) => `${service} 초대 메일 확인 — 왔음/안 왔음 (${hours}시간째)`,
+      acceptedWaiting: (service: string) => `${service} 수락했음 — API 반영 대기 (자동 재확인 중)`,
       clientCause: (service: string, label: string) => `${service}: ${label} — 의뢰인 조치 대기`,
       systemStuck: (service: string) => `${service} 자동 확인 지연 (일시 오류)`,
       slugStale: (title: string) => `「${title}」 이틀째 초대 전 — 카톡 한 줄`,
@@ -851,6 +853,7 @@ export const ko = {
       revokeDone: (guests: number, users: number, kept: number) =>
         `접근 이메일 ${guests}건 삭제 · 로그인 계정 ${users}건 삭제${kept > 0 ? ` · 다른 프로젝트에 남아 계정 유지 ${kept}건` : ""}`,
       revokeNothing: "회수할 접근이 없다.",
+      revokeOrder: "앞 항목(1~4)을 먼저 체크한 뒤 실행할 수 있다 — 진행 중인 의뢰인을 잠그지 않기 위해서다.",
     },
   },
 

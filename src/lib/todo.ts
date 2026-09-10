@@ -33,7 +33,7 @@ export type GuestLite = Pick<ProjectGuestRow, "last_seen_at">;
 export type ProjectLite = Pick<
   ProjectRow,
   "status" | "scope_md" | "scope_agreed_at" | "created_at" | "access_sent_at"
->;
+> & Partial<Pick<ProjectRow, "support_tier">>;
 
 const NOT_SEEN_AFTER_DAYS = 3;
 
@@ -54,10 +54,11 @@ export function buildTodos(
   const blocked = steps.filter(
     (step) => step.status === "blocked" && step.blocked_reason !== "need_help",
   ).length;
-  const clientDone = steps.filter((step) => step.status === "client_done").length;
+  // 내 쪽 설정 문제(토큰·이메일)만 「확인 실패」다. 일시 오류(system)는 조용히 재시도 중이다
   const verifyError = steps.filter(
     (step) =>
       step.verify_result?.status === "error" &&
+      ownerOf(step.verify_result) !== "system" &&
       step.status !== "verified" &&
       step.status !== "skipped",
   ).length;
@@ -80,6 +81,7 @@ export function buildTodos(
   }
   // 완료 요청이 끝나지 않은 단계 — 원인 코드가 「누가 다음에 움직이는가」를 말한다
   let clientRetries = 0;
+  let clientDone = 0; // 원인 코드로 따로 말하지 못한 완료 요청만 센다
   for (const step of steps) {
     if (step.status !== "client_done") continue;
     const result = step.verify_result;
@@ -89,13 +91,20 @@ export function buildTodos(
     if (code === "pending_accept") {
       items.push({ key: `invite-${step.key}`, label: copy.pendingAccept(service), tab: "steps", urgent: true });
     } else if (code === "await_admin_first" || code === "await_admin_ack") {
-      if (result?.admin_first_ack === "not_came") continue; // 의뢰인 차례 — 카톡 문구가 나갔다
+      if (result?.admin_first_ack === "came") {
+        items.push({ key: `invite-${step.key}`, label: copy.acceptedWaiting(service), tab: "steps", urgent: false });
+        continue;
+      }
       const hours = differenceInHours(now, new Date(result?.first_failed_at ?? step.checked_at ?? now));
       items.push({ key: `invite-${step.key}`, label: copy.awaitAdmin(service, hours), tab: "steps", urgent: true });
     } else if (ownerOf(result) === "client" && isVerifyCode(code)) {
       items.push({ key: `client-${step.key}`, label: copy.clientCause(service, ko.admin.verifyCode[code]), tab: "steps", urgent: false });
-    } else if (ownerOf(result) === "system" && (result?.auto_checks ?? 0) >= 3) {
-      items.push({ key: `system-${step.key}`, label: copy.systemStuck(service), tab: "steps", urgent: false });
+    } else if (ownerOf(result) === "system") {
+      if ((result?.auto_checks ?? 0) >= 3) {
+        items.push({ key: `system-${step.key}`, label: copy.systemStuck(service), tab: "steps", urgent: false });
+      }
+    } else if (ownerOf(result) !== "admin") {
+      clientDone += 1;
     }
   }
   // slug 는 저장했는데 이틀째 완료 요청이 없다 — 조용히 붙잡고 있는 의뢰인
@@ -105,7 +114,7 @@ export function buildTodos(
       items.push({ key: `stale-${step.key}`, label: copy.slugStale(step.title), tab: "steps", urgent: false });
     }
   }
-  if (clientRetries >= 3 || needHelp >= 2) {
+  if (project.support_tier !== "assisted" && (clientRetries >= 3 || needHelp >= 2)) {
     items.push({ key: "suggestAssisted", label: copy.suggestAssisted, tab: "settings", urgent: false });
   }
   if (clientDone > 0) {

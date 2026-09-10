@@ -53,7 +53,7 @@ export default async function AdminDashboardPage() {
     supabase
       .from("steps")
       .select(
-        "project_id, key, status, title, owner_side, order_index, verify_result, blocked_reason",
+        "project_id, key, status, title, owner_side, order_index, verify_result, blocked_reason, checked_at, updated_at",
       ),
     supabase
       .from("comments")

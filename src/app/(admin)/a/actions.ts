@@ -11,7 +11,7 @@ import { OPTIONAL_STEP_TEMPLATES, STEP_TEMPLATE } from "@/lib/steps";
 import { normalizeSlug } from "@/lib/slug";
 import { buildMagicLinkUrl } from "@/lib/magic-link";
 import { preflightBlockReason } from "@/lib/preflight";
-import { onAdminNotCame, onAdminReplied, portalUrl, recordCredentialsSent } from "@/lib/outbox";
+import { onAdminNotCame, onAdminReplied, onStepVerified, portalUrl, recordCredentialsSent } from "@/lib/outbox";
 import { runVerification } from "@/lib/verify/run";
 import { classify } from "@/lib/verify/types";
 import { CONNECT_META } from "@/lib/steps";
@@ -795,31 +795,52 @@ export async function ackInvite(
   const now = new Date();
 
   if (came) {
+    const stepInfo = { id: row.id, key: row.key, title: row.title, projectId: row.projects.id, projectCode: row.projects.code, projectName: row.projects.name, clientName: row.projects.client_name };
     if (row.verify_type === "manual") {
       await admin
         .from("steps")
         .update({ status: "verified", verified_at: now.toISOString(), verify_result: { ...classify("member_active"), admin_first_ack: "came" } })
         .eq("id", row.id);
+      // 확인됐다 — 「확인됐습니다 + 다음 안내」 카톡 문구
+      await onStepVerified(stepInfo, now.toISOString(), "admin");
       revalidateProject(code);
       return { ok: true };
     }
-    // API 단계: 「왔음·수락했음」이면 지금 확인한다. 아직이면 백오프 없이 5분 뒤 tick 이 다시 본다
+    // API 단계: 「왔음·수락했음」이면 지금 확인한다. 아직이면 백오프를 처음으로 되돌려 5분 뒤 tick 이 다시 본다
     await admin
       .from("steps")
       .update({ verify_result: { ...(row.verify_result ?? classify("await_admin_first")), admin_first_ack: "came" } })
       .eq("id", row.id);
     const result = await runVerification(row.id, "admin");
+    if (result && result.status !== "verified") {
+      await admin
+        .from("steps")
+        .update({
+          verify_result: {
+            ...result,
+            admin_first_ack: "came",
+            auto_checks: 0,
+            next_check_at: new Date(now.getTime() + 5 * 60_000).toISOString(),
+          },
+        })
+        .eq("id", row.id)
+        .filter("verify_result->>checked_at", "eq", result.checked_at);
+    }
     revalidateProject(code);
     return result?.status === "verified"
       ? { ok: true }
       : { ok: true, message: ko.admin.ack.notYet };
   }
 
-  // 안 왔음: 의뢰인이 초대를 다시 보게 한다
+  // 안 왔음: 의뢰인이 초대를 다시 보게 한다. 수동 단계도 같은 코드(check_invite)로 — 카드 거둠 판정이 한 규칙이다
   const base = row.verify_result ?? classify(row.verify_type === "manual" ? "await_admin_ack" : "await_admin_first");
-  const next = row.verify_type === "manual"
-    ? { ...base, admin_first_ack: "not_came" as const }
-    : { ...classify("check_invite", base.detail), first_failed_at: base.first_failed_at ?? now.toISOString(), client_attempts: base.client_attempts, auto_checks: base.auto_checks, admin_first_ack: "not_came" as const };
+  const next = {
+    ...classify("check_invite", base.detail),
+    first_failed_at: base.first_failed_at ?? now.toISOString(),
+    client_attempts: base.client_attempts,
+    auto_checks: base.auto_checks,
+    admin_first_ack: "not_came" as const,
+  };
   await admin.from("steps").update({ verify_result: next }).eq("id", row.id);
 
   const { data: adminRow } = await admin.from("admins").select("email").limit(1).maybeSingle();
@@ -856,23 +877,31 @@ export async function revokeGuestAccess(
   const { projectId, code } = parsed.data;
 
   const admin = createAdminClient();
-  const { data: guests } = await admin
-    .from("project_guests")
-    .select("id, email")
-    .eq("project_id", projectId);
-  const emails = [...new Set((guests ?? []).map((guest) => guest.email.toLowerCase()))];
-  const { error } = await admin.from("project_guests").delete().eq("project_id", projectId);
-  if (error) return { ok: false, message: ko.common.error };
+  const [{ data: guests }, { data: adminRows }] = await Promise.all([
+    admin.from("project_guests").select("id, email").eq("project_id", projectId),
+    admin.from("admins").select("email"),
+  ]);
+  const adminEmails = new Set((adminRows ?? []).map((row) => row.email.toLowerCase()));
+  // 관리자 본인 이메일이 게스트로 등록돼 있어도 로그인 계정은 절대 지우지 않는다
+  const emails = [...new Set((guests ?? []).map((guest) => guest.email.toLowerCase()))].filter(
+    (email) => !adminEmails.has(email),
+  );
 
-  // 다른 진행 중 프로젝트에도 등록된 이메일은 Auth 사용자를 남긴다
-  const { data: elsewhere } = emails.length
+  // 판정을 먼저, 삭제는 나중에. 다른 진행 중 프로젝트에도 등록된 이메일은 Auth 사용자를 남긴다.
+  // 조회가 실패하면 아무것도 지우지 않는다 — 진행 중인 의뢰인을 잠그는 쪽으로 틀리면 안 된다
+  const elsewhereResult = emails.length
     ? await admin
         .from("project_guests")
         .select("email, projects!inner(status)")
         .in("email", emails)
+        .neq("project_id", projectId)
         .neq("projects.status", "closed")
-    : { data: [] as { email: string }[] };
-  const keep = new Set((elsewhere ?? []).map((row) => row.email.toLowerCase()));
+    : { data: [] as { email: string }[], error: null };
+  if (elsewhereResult.error) return { ok: false, message: ko.common.error };
+  const keep = new Set((elsewhereResult.data ?? []).map((row) => row.email.toLowerCase()));
+
+  const { error } = await admin.from("project_guests").delete().eq("project_id", projectId);
+  if (error) return { ok: false, message: ko.common.error };
 
   let deletedUsers = 0;
   const kept = emails.filter((email) => keep.has(email));

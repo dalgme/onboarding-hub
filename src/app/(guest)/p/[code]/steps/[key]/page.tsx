@@ -87,6 +87,7 @@ export default async function StepDetailPage({
 
       {meta && isClientStep && !isClosed ? (
         <ConnectFlow
+          key={`${step.status === "client_done" ? "done" : "open"}:${step.verify_result?.checked_at ?? ""}`}
           step={step}
           projectId={project.id}
           projectCode={code}

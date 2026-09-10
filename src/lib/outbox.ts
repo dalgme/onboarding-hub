@@ -372,7 +372,10 @@ export async function sweepOutbox(
       const stillTodo = pointedId === "none" ? true : Boolean(pointed && pointed.status === "todo");
       needed = !(seen && seen > row.created_at) && stillTodo;
     } else if (row.kind === "rerequest") {
-      needed = Boolean(step && step.status === "client_done" && step.verify_result?.code === row.detail);
+      // 일시 오류(system)가 코드를 잠깐 덮어써도 카드는 거두지 않는다 — 원인이 사라진 것이 아니다
+      const current = step?.verify_result;
+      const transient = current?.owner === "system" || (current?.status === "error" && !current.owner);
+      needed = Boolean(step && step.status === "client_done" && (current?.code === row.detail || transient));
     } else if (row.kind === "admin_replied") {
       const commentId = row.dedupe_key.replace(/^admin_replied:/, "");
       needed = readByComment.get(commentId) === null;

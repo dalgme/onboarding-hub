@@ -287,6 +287,15 @@ no_slug)를 실어 「지금 할 일」이 "초대 수락 필요: Vercel"처럼 
 보인다 — 데이터는 그대로 `error`, 문구만 차분하게. (실제 사고: 토큰을
 등록하지 않은 채 의뢰인이 확인을 눌러 빨간 「확인 오류」를 봤다)
 
+**결과에는 원인 코드와 책임자가 붙는다.** `verify_result.code`(`src/lib/verify/types.ts`의
+`CODE_TABLE`)가 status 와 `owner`(client / admin / system)를 결정한다. 의뢰인 화면은
+코드→문장 매핑(`ko.stepDetail.verifyCode`)만 그리고 관리자 1인칭 `detail`은 절대 그리지 않는다.
+Vercel·Supabase의 「멤버 목록에 없음」은 초대 전인지 내 수락 전인지 API로 구분할 수 없으므로
+owner=admin(`await_admin_first`)에서 시작한다 — 내가 메일함을 보고 「왔음·수락했음 / 안 왔음」
+2탭을 눌러야 다음이 정해진다. 「안 왔음」이면 의뢰인 원인(`check_invite`)으로 바뀌고 「초대 확인
+부탁」 카톡 문구가 「보낼 카톡」에 오른다. Anthropic·Resend·Solapi 같은 수동 단계도 같은 2탭이다
+(`ADMIN_ACK_KEYS`). 일시 오류(owner=system)는 조용히 백오프하고 3회째에만 알린다.
+
 **관리자 이메일 = 내 GitHub·Vercel·Supabase·Anthropic 계정 이메일.** 의뢰인은
 허브가 보여주는 이메일로 초대하므로, 다르면 초대를 수락할 수 없다. 점검 배너가
 Vercel 계정 이메일과 대조해 「이메일 불일치」로 잡는다. (실제 사고: 허브는
