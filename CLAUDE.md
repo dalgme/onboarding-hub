@@ -211,7 +211,7 @@ $$;
 | verify_type | API | 판정 |
 |---|---|---|
 | `github` | `GET /orgs/{org}/memberships/{me}` | `state === 'active'` |
-| `vercel` | `GET /v2/teams/{team}/members` | 내 uid 포함 |
+| `vercel` | `GET /v2/teams`로 slug→id, `GET /v3/teams/{id}/members` | 내 `id`(`/v2/user`의 `id`, uid 아님) 항목이 confirmed |
 | `supabase` | `GET /v1/organizations/{slug}/members` | 내 이메일 포함 |
 
 DNS 검증은 만들지 않는다. 도메인은 눈으로 확인한다.
