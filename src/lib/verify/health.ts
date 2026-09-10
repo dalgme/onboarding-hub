@@ -95,7 +95,7 @@ function mismatch(service: string, accountEmail: string, hubEmail: string): Prob
 
 export async function checkVerifyTokens(): Promise<TokenHealth[]> {
   const hubEmail = await adminEmail();
-  return Promise.all([
+  const results = await Promise.all([
     probe(
       "github",
       "GITHUB_TOKEN",
@@ -146,4 +146,18 @@ export async function checkVerifyTokens(): Promise<TokenHealth[]> {
       {},
     ),
   ]);
+  // 문제가 있으면 서버 로그에도 남긴다 — 화면을 못 보는 곳(배포 로그)에서 진단할 수 있게.
+  // 토큰 값은 절대 적지 않는다. 이름과 상태만
+  if (results.some((result) => result.status !== "ok")) {
+    console.warn(
+      "[health] 토큰 상태",
+      Object.fromEntries(
+        results.map((result) => [
+          result.envName,
+          result.detail ? `${result.status}: ${result.detail}` : result.status,
+        ]),
+      ),
+    );
+  }
+  return results;
 }
