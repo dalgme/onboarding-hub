@@ -152,7 +152,7 @@ export async function runTick(now: Date): Promise<TickReport> {
 
   // 3) 백오프 시각이 지난 완료 요청 재확인
   try {
-    report.reverified = await reverifyStale({ limit: REVERIFY_LIMIT, now });
+    report.reverified = await reverifyStale({ limit: REVERIFY_LIMIT, now, mode: "tick" });
   } catch (cause) {
     report.errors.push(`reverify: ${errorText(cause)}`);
   }

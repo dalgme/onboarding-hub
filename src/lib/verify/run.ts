@@ -84,10 +84,14 @@ function withSchedule(
   trigger: VerifyTrigger,
 ): VerifyResult {
   if (result.status === "verified") return result;
+  // 최초 실패 시각은 「같은 원인이 이어지는 동안」 유지한다. 중간에 낀 일시 오류(error)는
+  // 원인을 바꾸지 않으므로 리셋하지 않는다 — 리셋되면 재요청 카드가 새 키로 다시 만들어진다
   const sameCause =
     previous !== null &&
-    previous.status === result.status &&
-    (previous.code ?? null) === (result.code ?? null);
+    previous.status !== "verified" &&
+    (result.status === "error" ||
+      previous.status === "error" ||
+      (previous.code ?? null) === (result.code ?? null));
   const clientAttempts = (previous?.client_attempts ?? 0) + (trigger === "client" ? 1 : 0);
   const autoChecks =
     trigger === "client" ? 0 : (previous?.auto_checks ?? 0) + (trigger === "auto" ? 1 : 0);
@@ -164,7 +168,7 @@ export async function runVerification(
         dedupeKey: `verify_event:${step.id}:verified:${minuteOf(result.checked_at)}`,
         ...ko.push.autoVerified(project.name, step.title),
       });
-      await onStepVerified(stepInfo, result.checked_at);
+      await onStepVerified(stepInfo, result.checked_at, trigger);
     });
   } else if (result.status === "error" && trigger !== "admin" && (trigger === "client" || !wasError)) {
     after(() =>
@@ -176,11 +180,12 @@ export async function runVerification(
       }),
     );
   } else if (result.status === "not_found" && trigger !== "admin") {
-    // 의뢰인이 완료를 누른 뒤 첫 1회만 알린다 (client_done 전이 시각이 에폭).
+    // 의뢰인이 「완료했습니다」를 누른 뒤 첫 1회만 알린다 (client_done 전이 시각이 에폭).
+    // 완료 전(doing)의 「연결 확인하기」는 의뢰인 스스로 보는 확인이라 알리지 않는다.
     // 자동 재확인이 내 쪽 오류에서 회복한 경우도 한 번 알린다
     const epoch = step.checked_at ? minuteOf(step.checked_at) : minuteOf(result.checked_at);
     after(async () => {
-      if (trigger === "client") {
+      if (trigger === "client" && step.status === "client_done") {
         await pushAdmin({
           ...base,
           dedupeKey: `verify_event:${step.id}:pending:${epoch}`,
@@ -202,15 +207,20 @@ export async function runVerification(
 
 const STALE_AFTER_MS = 5 * 60_000;
 
-// 다시 확인할 때가 된 완료 요청을 돌린다. 시계는 크론 tick 이고, 대시보드·포털이
-// 열릴 때도 한 번 더 돈다(이중화). 어떤 경우에도 throw 하지 않는다.
+// 다시 확인할 때가 된 완료 요청을 돌린다.
+//  - tick(mode 'tick'): next_check_at 백오프를 따른다 — 밤새 15분마다 API 를 두드리지 않는다
+//  - 화면 열림(mode 'screen', 기본): 마지막 확인이 5분만 지났으면 다시 본다 — 내가 초대를
+//    수락하고 대시보드를 열면 그 자리에서 「확인 완료」가 돼야 한다
+// 어떤 경우에도 throw 하지 않는다.
 export async function reverifyStale(options: {
   projectId?: string;
   limit?: number;
   now?: Date;
+  mode?: "tick" | "screen";
 } = {}): Promise<number> {
   const limit = options.limit ?? 6;
   const now = options.now ?? new Date();
+  const mode = options.mode ?? "screen";
   try {
     const admin = createAdminClient();
     let query = admin
@@ -226,10 +236,12 @@ export async function reverifyStale(options: {
       .filter((row) => {
         const result = row.verify_result;
         if (!result) return true;
-        // 백오프 시각이 있으면 그것, 없으면(구 데이터) 마지막 확인 + 5분
+        const lastChecked = new Date(result.checked_at).getTime();
+        if (mode === "screen") return lastChecked + STALE_AFTER_MS <= now.getTime();
+        // tick: 백오프 시각이 있으면 그것, 없으면(구 데이터) 마지막 확인 + 5분
         const dueAt = result.next_check_at
           ? new Date(result.next_check_at).getTime()
-          : new Date(result.checked_at).getTime() + STALE_AFTER_MS;
+          : lastChecked + STALE_AFTER_MS;
         return dueAt <= now.getTime();
       })
       .sort((a, b) => (a.verify_result?.next_check_at ?? "").localeCompare(b.verify_result?.next_check_at ?? ""))

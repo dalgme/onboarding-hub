@@ -36,7 +36,7 @@ export async function POST(
 
   const { data: step } = await supabase
     .from("steps")
-    .select("id, verify_type, verify_result, projects!inner(status)")
+    .select("id, verify_type, status, verify_result, projects!inner(status)")
     .eq("id", bodyParsed.data.stepId)
     .maybeSingle();
   if (!step) {
@@ -53,8 +53,15 @@ export async function POST(
   // 관리자 클릭인지 의뢰인 클릭인지는 알림 정책에만 쓴다
   const { data: adminRow } = await supabase.from("admins").select("id").limit(1).maybeSingle();
 
-  // 의뢰인 연타 방어: 60초 안의 재클릭은 외부 API 를 다시 부르지 않고 마지막 결과를 돌려준다
+  // 끝난 단계는 다시 확인하지 않는다 — 있는 결과(없으면 verified 표시용 합성)를 그대로 돌려준다
   const last = step.verify_result as VerifyResult | null;
+  if (step.status === "verified" || step.status === "skipped") {
+    return NextResponse.json({
+      result: last ?? { status: "verified", checked_at: new Date().toISOString() },
+      final: true,
+    });
+  }
+  // 의뢰인 연타 방어: 60초 안의 재클릭은 외부 API 를 다시 부르지 않고 마지막 결과를 돌려준다
   if (!adminRow && last && Date.now() - new Date(last.checked_at).getTime() < COOLDOWN_MS) {
     return NextResponse.json({ result: last, cooldown: true });
   }

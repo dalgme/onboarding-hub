@@ -62,17 +62,20 @@ export async function createOutbox(input: OutboxCreate): Promise<"created" | "du
   try {
     const admin = createAdminClient();
     const now = new Date();
-    // 같은 주제의 pending 은 대체한다 (일일 상한 인덱스와 충돌하지 않게 삽입 전에)
-    let supersede = admin
-      .from("notices")
-      .update({ status: "superseded" })
-      .eq("project_id", input.projectId)
-      .eq("kind", input.kind)
-      .eq("channel", "outbox")
-      .eq("status", "pending")
-      .neq("dedupe_key", input.dedupeKey);
-    supersede = input.stepId ? supersede.eq("step_id", input.stepId) : supersede.is("step_id", null);
-    await supersede;
+    // 같은 주제의 pending 은 대체한다 (일일 상한 인덱스와 충돌하지 않게 삽입 전에).
+    // 답글 알림은 답글마다 별개다 — 앞선 답글 본문을 지우지 않는다
+    if (input.kind !== "admin_replied") {
+      let supersede = admin
+        .from("notices")
+        .update({ status: "superseded" })
+        .eq("project_id", input.projectId)
+        .eq("kind", input.kind)
+        .eq("channel", "outbox")
+        .eq("status", "pending")
+        .neq("dedupe_key", input.dedupeKey);
+      supersede = input.stepId ? supersede.eq("step_id", input.stepId) : supersede.is("step_id", null);
+      await supersede;
+    }
 
     const { data, error } = await admin
       .from("notices")
@@ -144,7 +147,14 @@ function nextClientAfter(steps: StepLite[], current: StepLite | undefined): Step
 }
 
 // 연결이 확인됐다 → 「확인됐습니다 + 다음은 …」 문구. 푸시는 검증 쪽에서 이미 나갔다
-export async function onStepVerified(step: StepInfo, verifiedAt: string): Promise<void> {
+export async function onStepVerified(
+  step: StepInfo,
+  verifiedAt: string,
+  trigger: "client" | "admin" | "auto",
+): Promise<void> {
+  // 의뢰인이 방금 「완료했습니다」를 눌러 그 자리에서 확인된 것이다 — 포털이 이미
+  // 「확인됐습니다·다음」을 보여주고 있다. 카톡 문구를 만들 이유가 없다
+  if (trigger === "client") return;
   const admin = createAdminClient();
   const [{ data: project }, { data: steps }, { data: guests }] = await Promise.all([
     admin.from("projects").select("status").eq("id", step.projectId).maybeSingle(),

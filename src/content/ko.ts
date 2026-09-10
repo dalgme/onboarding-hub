@@ -302,7 +302,7 @@ export const ko = {
     }),
     autoPending: (project: string, step: string, detail: string) => ({
       title: `${project} · 완료 요청 (아직 확인 안 됨)`,
-      body: `「${step}」 — ${detail}. 초대를 수락하면 15분 안에 자동으로 다시 확인됩니다.`,
+      body: `「${step}」 — ${detail}. 초대를 수락한 뒤 대시보드를 열면 그 자리에서, 아니어도 자동으로 다시 확인됩니다.`,
     }),
     tokenRed: (envName: string, status: string) => ({
       title: "검증 토큰 문제",

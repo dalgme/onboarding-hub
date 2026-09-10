@@ -137,6 +137,18 @@ export async function saveOrgSlug(
     .eq("id", projectId);
 
   if (error) return { ok: false, message: ko.common.error };
+
+  // 「완료했습니다」를 먼저 누르고 주소를 나중에 넣은 경우 — 백오프를 기다리지 않고 바로 다시 확인한다.
+  // (안 그러면 「주소 부탁」 문구가 최대 24시간 남는다)
+  const { data: doneStep } = await supabase
+    .from("steps")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("key", stepKey)
+    .eq("status", "client_done")
+    .maybeSingle();
+  if (doneStep) await runVerification(doneStep.id, "auto").catch(() => null);
+
   revalidatePath(`/p/${code}`, "layout");
   return { ok: true, normalizedSlug: slug };
 }

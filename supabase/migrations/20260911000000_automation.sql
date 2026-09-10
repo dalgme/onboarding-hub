@@ -41,8 +41,9 @@ create index notices_project_idx on public.notices (project_id, created_at desc)
 create index notices_claimed_idx on public.notices (claimed_at) where status = 'claimed';  -- stale claim 청소
 create index notices_pending_idx on public.notices (created_at) where status = 'pending';  -- 「보낼 카톡」 카드·적체
 create index notices_kind_idx on public.notices (kind, created_at desc);                  -- 토큰 전환·최근 자동 조치
--- 「같은 사유로 하루 2건 금지」— 리마인드 계열만. 대체는 이전 행을 superseded 로 바꾼 뒤 삽입한다
-create unique index notices_daily_cap_idx on public.notices (project_id, kind, day_kst)
+-- 「같은 사유로 하루 2건 금지」— 리마인드 계열만, 채널별로(문구 1건 + 그 푸시 1건은 공존한다).
+-- 대체는 이전 행을 superseded 로 바꾼 뒤 삽입한다
+create unique index notices_daily_cap_idx on public.notices (project_id, kind, channel, day_kst)
   where kind in ('reminder','escalation') and status in ('claimed','pending','sent');
 create trigger set_updated_at before update on public.notices
   for each row execute procedure extensions.moddatetime (updated_at);
@@ -55,6 +56,12 @@ create policy notices_select on public.notices
 -- 2) 컬럼
 alter table public.projects add column access_sent_at timestamptz;        -- 접속 안내 「보냈음」 시각(리마인드·미접속 기준점)
 alter table public.projects add column remind_paused_until timestamptz;   -- 관리자 「보류」 칩
+-- 이미 진행 중인 프로젝트: 의뢰인이 한 번이라도 들어왔다면 접속 안내는 이미 나간 것이다
+update public.projects p
+   set access_sent_at = g.first_seen
+  from (select project_id, min(last_seen_at) as first_seen
+          from public.project_guests where last_seen_at is not null group by project_id) g
+ where g.project_id = p.id and p.access_sent_at is null;
 alter table public.push_subscriptions add column last_ack_at timestamptz; -- 마지막 ack(배달 확인)
 alter table public.admins add column last_tick_started_at timestamptz;    -- tick 락 겸 heartbeat 시작
 alter table public.admins add column last_tick_finished_at timestamptz;   -- 배너는 이 값으로 판정
