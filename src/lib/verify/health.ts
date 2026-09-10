@@ -17,16 +17,26 @@ export interface TokenHealth {
 
 const TIMEOUT_MS = 6000;
 
+// classic PAT의 권한 목록은 정규화된다 — admin:org ⊃ write:org ⊃ read:org 이므로
+// 상위를 체크하면 하위는 목록에 나오지 않는다. 셋 중 하나면 조직 멤버십을 읽을 수 있다
+const GITHUB_ORG_READ_SCOPES = ["read:org", "write:org", "admin:org"];
+
 async function probe(
   key: TokenKey,
   envName: string,
   url: string,
   headers: Record<string, string>,
   judge?: (response: Response) => string | null,
+  preflight?: (token: string) => string | null,
 ): Promise<TokenHealth> {
   const token = process.env[envName];
   if (!token) {
     return { key, envName, status: "missing" };
+  }
+  // 호출해 보기 전에 토큰 자체로 판정할 수 있는 것은 먼저 잡는다
+  const early = preflight?.(token) ?? null;
+  if (early) {
+    return { key, envName, status: "invalid", detail: early };
   }
   try {
     const response = await fetch(url, {
@@ -66,16 +76,25 @@ export async function checkVerifyTokens(): Promise<TokenHealth[]> {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
       },
-      // classic PAT는 권한 목록을 헤더로 알려준다. read:org가 없으면
-      // 조직 멤버십 조회가 404로 떨어져 "아직 안 됨"처럼 보인다 — 미리 잡는다
+      // classic PAT는 권한 목록을 헤더로 알려준다(권한이 없어도 빈 헤더는 온다).
+      // read:org 계열이 없으면 조직 멤버십 조회가 404로 떨어져 "아직 안 됨"처럼
+      // 보인다 — 배너가 초록인데 검증은 영원히 노란색인 상황을 여기서 막는다
       (response) => {
         const scopes = response.headers.get("x-oauth-scopes");
-        if (scopes === null) return null;
+        if (scopes === null) {
+          return "classic 토큰이 아니다 — Tokens (classic) + read:org 로 다시 만든다";
+        }
         const list = scopes.split(",").map((scope) => scope.trim());
-        return list.includes("read:org") || list.includes("admin:org")
+        return GITHUB_ORG_READ_SCOPES.some((scope) => list.includes(scope))
           ? null
           : "read:org 권한이 없는 토큰이다";
       },
+      // fine-grained 토큰(github_pat_)은 소유자가 고정돼 의뢰인 조직을 조회하지 못한다.
+      // /user 호출은 200이 나오므로 호출 결과만 보면 정상처럼 보인다 — 접두어로 먼저 거른다
+      (token) =>
+        token.startsWith("github_pat_")
+          ? "fine-grained 토큰이다 — 의뢰인 조직을 조회할 수 없다. Tokens (classic) + read:org 로 다시 만든다"
+          : null,
     ),
     probe("vercel", "MY_VERCEL_TOKEN", "https://api.vercel.com/v2/user", {}),
     probe(

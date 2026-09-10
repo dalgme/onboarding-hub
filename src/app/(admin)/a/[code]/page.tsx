@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { format } from "date-fns";
@@ -22,6 +23,7 @@ import { OffboardPanel } from "@/app/(admin)/a/[code]/offboard-panel";
 import { ProcessTab } from "@/app/(admin)/a/[code]/process-tab";
 import { OptionalSteps } from "@/app/(admin)/a/[code]/optional-steps";
 import { AccessPanel } from "@/app/(admin)/a/[code]/access-panel";
+import { VerifyTokenWarning } from "@/app/(admin)/a/verify-health";
 
 const TABS = [
   { key: "process", label: ko.admin.tabProcess },
@@ -236,6 +238,9 @@ export default async function AdminProjectPage({
             projectCode={code}
             accountByEmail={accountByEmail}
           />
+          <Suspense fallback={null}>
+            <VerifyTokenWarning />
+          </Suspense>
           <AccessPanel
             guests={guests ?? []}
             projectId={project.id}

@@ -287,7 +287,7 @@ export const ko = {
         github: {
           label: "GitHub",
           howTo:
-            "GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate. 권한은 read:org 하나면 된다.",
+            "GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate. Fine-grained 탭이 아니라 반드시 classic이어야 한다(fine-grained는 의뢰인 조직을 조회하지 못한다). 권한은 read:org 하나면 된다.",
         },
         vercel: {
           label: "Vercel",
@@ -299,6 +299,10 @@ export const ko = {
         },
       },
       fix: "만든 토큰을 Vercel 프로젝트 → Settings → Environment Variables 에 위 이름 그대로(Production) 추가하고 Redeploy 한다. 그 뒤 이 화면을 새로고침해 초록색을 확인한다.",
+      // /a/[code] 설정 탭 「접속 정보 발급」 위. 토큰이 하나라도 준비 안 됐을 때만 보인다
+      issueWarning:
+        "검증 토큰이 아직 준비되지 않았다. 지금 접속 정보를 보내면 의뢰인이 「연결 확인하기」를 눌러도 자동 확인이 되지 않고 「제작자 확인 중」이 뜬다.",
+      issueWarningLink: "대시보드에서 토큰 상태 보기",
       recentErrors: "의뢰인 화면에서 실패한 확인",
       noRecentErrors: "최근 실패한 확인이 없다.",
     },

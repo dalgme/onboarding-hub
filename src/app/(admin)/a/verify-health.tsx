@@ -112,6 +112,41 @@ export async function VerifyHealth({
   );
 }
 
+// 설정 탭 「접속 정보 발급」 위에 붙는 경고. 사고의 실제 경로는
+// 「생성 → 발급 → 카톡 전송」이고 그 길에는 대시보드가 없다 — 보내는 자리에서 막는다.
+// 전부 정상이면 아무것도 그리지 않는다. 발급 자체는 막지 않는다.
+export async function VerifyTokenWarning() {
+  const tokens = await checkVerifyTokens();
+  const broken = tokens.filter((token) => token.status !== "ok");
+  if (broken.length === 0) return null;
+  const copy = ko.admin.health;
+  return (
+    <div
+      role="alert"
+      className="flex flex-col gap-1.5 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm"
+    >
+      <span className="flex flex-wrap items-center gap-2 font-semibold text-destructive">
+        <ShieldAlert className="size-4 shrink-0" />
+        {copy.title}
+        {broken.map((token) => (
+          <Badge key={token.key} variant={STATUS_VARIANT[token.status]}>
+            {copy.items[token.key].label} · {copy.statuses[token.status]}
+          </Badge>
+        ))}
+      </span>
+      <p className="text-xs leading-relaxed text-foreground/80">
+        {copy.issueWarning}
+      </p>
+      <Link
+        href="/a"
+        className="text-xs font-medium text-primary hover:underline"
+      >
+        {copy.issueWarningLink}
+      </Link>
+    </div>
+  );
+}
+
 export function VerifyHealthFallback() {
   return (
     <section className="rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">

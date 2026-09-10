@@ -8,6 +8,14 @@ export async function verifyGithubMembership(org: string): Promise<VerifyResult>
   if (!token) {
     return makeResult("error", "GITHUB_TOKEN이 설정되지 않았습니다");
   }
+  // fine-grained 토큰은 의뢰인 조직 멤버십을 읽지 못해 404가 난다.
+  // 그걸 not_found로 흘리면 "초대했다니까요" 루프에 빠진다 — 내 쪽 문제(error)다
+  if (token.startsWith("github_pat_")) {
+    return makeResult(
+      "error",
+      "GITHUB_TOKEN이 fine-grained 토큰입니다 — classic(read:org) 토큰이 필요합니다",
+    );
+  }
 
   try {
     const response = await fetch(

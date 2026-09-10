@@ -84,13 +84,24 @@ export function ConnectFlow({
   }
 
   if (isVerified) {
+    // 내가 눈으로 보고 「확인 완료로」 처리하면 verify_result에는 옛 error/not_found가
+    // 남는다. 확인 완료 카드에서 「제작자 확인 중」이 같이 뜨면 안 되므로,
+    // verified 결과가 아니면 verified_at으로 대신한다. 데이터는 건드리지 않는다
+    const shownResult: VerifyResult | null =
+      step.verify_result?.status === "verified"
+        ? step.verify_result
+        : step.verified_at
+          ? { status: "verified", checked_at: step.verified_at }
+          : null;
     return (
       <Card className="border-success/40 bg-success/5">
         <CardContent className="flex items-center gap-3 p-5">
           <PartyPopper className="size-6 shrink-0 text-success" />
           <div className="flex flex-col gap-1">
             <p className="font-medium">{ko.stepDetail.verifiedTitle}</p>
-            <VerifyBadge result={step.verify_result} side="client" />
+            {shownResult ? (
+              <VerifyBadge result={shownResult} side="client" />
+            ) : null}
           </div>
         </CardContent>
       </Card>
