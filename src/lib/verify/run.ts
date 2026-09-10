@@ -107,6 +107,9 @@ export async function runVerification(
 ): Promise<VerifyResult | null> {
   const step = await loadStep(stepId);
   if (!step || !step.projects || !isAutoVerifyType(step.verify_type)) return null;
+  // 끝난 단계는 다시 확인하지 않는다 — 의뢰인 세션은 RLS 가 막지만 이 함수는 service_role 이라
+  // 여기서도 막아야 verified_at·verify_result 가 덮어써지지 않는다
+  if (step.status === "verified" || step.status === "skipped") return step.verify_result;
   const project = step.projects;
 
   const computed = await compute(step.verify_type, project[SLUG_COLUMN[step.verify_type]]);
@@ -142,7 +145,6 @@ export async function runVerification(
 
   // 알림은 「전이」에만 — 키에 전이 시각이 들어가므로 같은 상태의 반복 확인은 조용하다.
   // 관리자 클릭은 화면에서 본다
-  const wasVerified = step.status === "verified";
   const wasError = step.verify_result?.status === "error";
   const url = `/a/${project.code}?tab=steps`;
   const base = { kind: "verify_event" as const, projectId: project.id, stepId: step.id, url };
@@ -155,7 +157,7 @@ export async function runVerification(
     projectName: project.name,
     clientName: project.client_name,
   };
-  if (result.status === "verified" && !wasVerified) {
+  if (result.status === "verified") {
     after(async () => {
       await pushAdmin({
         ...base,
@@ -174,7 +176,8 @@ export async function runVerification(
       }),
     );
   } else if (result.status === "not_found" && trigger !== "admin") {
-    // 의뢰인이 완료를 누른 뒤 첫 1회만 알린다 (client_done 전이 시각이 에폭)
+    // 의뢰인이 완료를 누른 뒤 첫 1회만 알린다 (client_done 전이 시각이 에폭).
+    // 자동 재확인이 내 쪽 오류에서 회복한 경우도 한 번 알린다
     const epoch = step.checked_at ? minuteOf(step.checked_at) : minuteOf(result.checked_at);
     after(async () => {
       if (trigger === "client") {
@@ -183,18 +186,15 @@ export async function runVerification(
           dedupeKey: `verify_event:${step.id}:pending:${epoch}`,
           ...ko.push.autoPending(project.name, step.title, result.detail ?? ""),
         });
+      } else if (wasError) {
+        await pushAdmin({
+          ...base,
+          dedupeKey: `verify_event:${step.id}:recovered:${minuteOf(result.checked_at)}`,
+          ...ko.push.verifyRecovered(project.name, step.title),
+        });
       }
       await onVerifyClientCause(stepInfo, result, project);
     });
-  } else if (result.status === "not_found" && wasError && trigger === "auto") {
-    // 내 쪽 오류에서 회복 — 다시 정상적으로 확인하고 있다
-    after(() =>
-      pushAdmin({
-        ...base,
-        dedupeKey: `verify_event:${step.id}:recovered:${minuteOf(result.checked_at)}`,
-        ...ko.push.verifyRecovered(project.name, step.title),
-      }),
-    );
   }
 
   return result;

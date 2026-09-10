@@ -169,7 +169,8 @@ export function OutboxList({
                 <span className="text-muted-foreground">
                   · {statusLabel(item)} · {format(new Date(item.updated_at), "MM.dd HH:mm")}
                 </span>
-                {item.status === "sent" || (item.status === "skipped" && item.skip_reason === "admin") ? (
+                {item.kind !== "credentials" &&
+                (item.status === "sent" || (item.status === "skipped" && item.skip_reason === "admin")) ? (
                   <button
                     type="button"
                     className="text-primary underline disabled:opacity-50"

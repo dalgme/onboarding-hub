@@ -168,6 +168,8 @@ export async function onStepVerified(step: StepInfo, verifiedAt: string): Promis
     projectId: step.projectId,
     stepId: step.id,
     dedupeKey: `next_step:${step.id}:${minuteOf(verifiedAt)}`,
+    // 거둠 판정용: 이 카드가 가리킨 다음 단계. 없으면 「의뢰인 작업 끝」 안내다
+    detail: next ? `next:${next.id}` : "next:none",
     title: ko.outbox.titles.nextStep(step.title),
     body: ko.outbox.nextStep({
       client: step.clientName,
@@ -355,10 +357,12 @@ export async function sweepOutbox(
     const step = row.step_id ? projectSteps.find((item) => item.id === row.step_id) : undefined;
     let needed = true;
     if (row.kind === "next_step") {
-      // 의뢰인이 그 뒤 포털에 들어왔거나 다음 단계를 시작했으면 안내는 필요 없다
+      // 의뢰인이 그 뒤 포털에 들어왔거나, 카드가 가리킨 그 단계를 시작했으면 안내는 필요 없다
       const seen = lastSeenByProject.get(row.project_id);
-      const next = nextClientAfter(projectSteps, step);
-      needed = !(seen && seen > row.created_at) && (next === null || next.status === "todo");
+      const pointedId = row.detail?.startsWith("next:") ? row.detail.slice(5) : null;
+      const pointed = pointedId && pointedId !== "none" ? projectSteps.find((item) => item.id === pointedId) : null;
+      const stillTodo = pointedId === "none" ? true : Boolean(pointed && pointed.status === "todo");
+      needed = !(seen && seen > row.created_at) && stillTodo;
     } else if (row.kind === "rerequest") {
       needed = Boolean(step && step.status === "client_done" && step.verify_result?.code === row.detail);
     } else if (row.kind === "admin_replied") {

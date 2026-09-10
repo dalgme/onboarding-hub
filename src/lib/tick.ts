@@ -47,12 +47,12 @@ async function checkTokensIfDue(now: Date, lastCheckAt: string | null): Promise<
     .eq("kind", "token_event")
     .order("created_at", { ascending: false })
     .limit(30);
-  // detail = "ENV_NAME:red|ok" — 각 env 의 가장 최근 전환
+  // detail = "ENV_NAME:red|ok" — 각 env 의 가장 최근 전환 (다른 형식의 detail 은 무시)
   const previous = new Map<string, "red" | "ok">();
   for (const row of previousRows ?? []) {
-    const [envName, state] = (row.detail ?? "").split(":");
-    if (envName && (state === "red" || state === "ok") && !previous.has(envName)) {
-      previous.set(envName, state);
+    const match = /^([A-Z0-9_]+):(red|ok)$/.exec(row.detail ?? "");
+    if (match && !previous.has(match[1])) {
+      previous.set(match[1], match[2] as "red" | "ok");
     }
   }
 
@@ -89,7 +89,7 @@ async function failStaleClaims(now: Date): Promise<number> {
   const cutoff = new Date(now.getTime() - STALE_CLAIM_MS).toISOString();
   const { data } = await admin
     .from("notices")
-    .update({ status: "failed", detail: "stale_claim" })
+    .update({ status: "failed" })
     .eq("status", "claimed")
     .lt("claimed_at", cutoff)
     .select("id");

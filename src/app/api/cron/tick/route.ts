@@ -10,11 +10,11 @@ export const maxDuration = 60;
 function authorized(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false; // 미설정이면 닫힌다 (fail-closed)
-  const header = request.headers.get("authorization") ?? "";
-  const expected = `Bearer ${secret}`;
-  // timingSafeEqual 은 길이가 다르면 throw 한다 — 길이를 먼저 비교한다
+  const header = Buffer.from(request.headers.get("authorization") ?? "");
+  const expected = Buffer.from(`Bearer ${secret}`);
+  // timingSafeEqual 은 바이트 길이가 다르면 throw 한다 — 바이트 길이를 먼저 비교한다
   if (header.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(header), Buffer.from(expected));
+  return timingSafeEqual(header, expected);
 }
 
 export async function GET(request: NextRequest) {

@@ -11,7 +11,7 @@ import { OPTIONAL_STEP_TEMPLATES, STEP_TEMPLATE } from "@/lib/steps";
 import { normalizeSlug } from "@/lib/slug";
 import { buildMagicLinkUrl } from "@/lib/magic-link";
 import { preflightBlockReason } from "@/lib/preflight";
-import { onAdminReplied, recordCredentialsSent } from "@/lib/outbox";
+import { onAdminReplied, portalUrl, recordCredentialsSent } from "@/lib/outbox";
 import { after } from "next/server";
 import { ko } from "@/content/ko";
 import type { ActionResult } from "@/app/(guest)/p/[code]/actions";
@@ -703,7 +703,11 @@ export async function handleOutbox(
         ? { status: "skipped", skip_reason: "admin", sent_at: null }
         : { status: "pending", sent_at: null, skip_reason: null },
   ).eq("id", id).eq("channel", "outbox");
-  query = action === "restore" ? query.in("status", ["sent", "skipped"]) : query.eq("status", "pending");
+  // 되돌리기는 사람이 처리한 것만, 그리고 pending 인 적이 없던 credentials 는 제외
+  query =
+    action === "restore"
+      ? query.in("status", ["sent", "skipped"]).neq("kind", "credentials")
+      : query.eq("status", "pending");
   const { data, error } = await query.select("id, kind, project_id, projects(code)");
   if (error || !data || data.length === 0) return { ok: false, message: ko.common.error };
 
@@ -721,7 +725,6 @@ const accessSentSchema = z.object({
   projectId: z.uuid(),
   code: z.string().min(1),
   email: z.email(),
-  bodyMasked: z.string().min(1).max(2000),
 });
 
 // 발급 화면의 「카톡으로 보내기」— 공유/복사가 성공한 순간 접속 안내를 보낸 것으로 기록한다.
@@ -732,14 +735,23 @@ export async function markAccessSent(
   const parsed = accessSentSchema.safeParse(input);
   if (!parsed.success) return { ok: false, message: ko.common.error };
   if (!(await isAdminUser())) return { ok: false, message: ko.common.unauthorized };
-  const { projectId, code, email, bodyMasked } = parsed.data;
+  const { projectId, code, email } = parsed.data;
 
   const admin = createAdminClient();
-  const { error } = await admin
+  const { data: project, error } = await admin
     .from("projects")
     .update({ access_sent_at: new Date().toISOString() })
-    .eq("id", projectId);
-  if (error) return { ok: false, message: ko.common.error };
+    .eq("id", projectId)
+    .select("name")
+    .maybeSingle();
+  if (error || !project) return { ok: false, message: ko.common.error };
+  // 장부 본문은 서버가 만든다 — 비밀번호 자리는 마스킹. 브라우저가 준 문자열을 저장하지 않는다
+  const bodyMasked = ko.admin.password.kakaoMessage({
+    projectName: project.name,
+    portalUrl: portalUrl(code),
+    email: email.toLowerCase(),
+    password: ko.outbox.credentialsBodyMasked,
+  });
   await recordCredentialsSent({ projectId, email: email.toLowerCase(), body: bodyMasked });
   revalidateProject(code);
   return { ok: true };

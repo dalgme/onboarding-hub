@@ -87,12 +87,15 @@ export async function pushAdmin(input: AdminPushInput): Promise<PushOutcome> {
           : result.configured
             ? "failed"
             : "unconfigured";
+    // detail 은 호출자의 데이터(토큰 전환 상태 등)라 덮어쓰지 않는다. 실패 사유는 로그로
+    if (outcome !== "sent") {
+      console.error("[notify] 배달 실패", { key: input.dedupeKey, outcome });
+    }
     await admin
       .from("notices")
       .update({
         status: outcome === "sent" ? "sent" : "failed",
         sent_at: outcome === "sent" ? new Date().toISOString() : null,
-        detail: outcome === "sent" ? input.detail?.slice(0, 300) ?? null : `${outcome}${input.detail ? ` · ${input.detail.slice(0, 250)}` : ""}`,
       })
       .eq("id", row.id);
     return outcome;

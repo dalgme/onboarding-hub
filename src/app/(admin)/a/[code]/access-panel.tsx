@@ -75,14 +75,7 @@ export function AccessPanel({
       setSentNote((current) => ({ ...current, [email]: ko.admin.outbox.copyFailed }));
       return;
     }
-    const portalUrl = `${window.location.origin}/p/${projectCode}`;
-    const bodyMasked = ko.admin.password.kakaoMessage({
-      projectName,
-      portalUrl,
-      email,
-      password: ko.outbox.credentialsBodyMasked,
-    });
-    const result = await markAccessSent({ projectId, code: projectCode, email, bodyMasked });
+    const result = await markAccessSent({ projectId, code: projectCode, email });
     setSentNote((current) => ({
       ...current,
       [email]: result.ok ? ko.admin.password.sentJustNow : (result.message ?? ko.common.error),
