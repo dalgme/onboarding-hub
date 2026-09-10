@@ -90,7 +90,7 @@ export function ConnectFlow({
           <PartyPopper className="size-6 shrink-0 text-success" />
           <div className="flex flex-col gap-1">
             <p className="font-medium">{ko.stepDetail.verifiedTitle}</p>
-            <VerifyBadge result={step.verify_result} />
+            <VerifyBadge result={step.verify_result} side="client" />
           </div>
         </CardContent>
       </Card>
@@ -215,7 +215,7 @@ export function ConnectFlow({
           <CardContent className="flex flex-col gap-3 p-5">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="size-5 text-primary" />
-              <VerifyBadge result={lastResult} />
+              <VerifyBadge result={lastResult} side="client" />
             </div>
             {lastResult?.status === "not_found" ? (
               <p className="text-sm leading-relaxed text-muted-foreground">

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { Plus } from "lucide-react";
 import { format } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
@@ -8,6 +9,11 @@ import { Progress } from "@/components/ui/progress";
 import { buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/common/empty-state";
 import { MyPasswordForm } from "@/app/(admin)/a/my-password-form";
+import {
+  VerifyHealth,
+  VerifyHealthFallback,
+  type RecentVerifyError,
+} from "@/app/(admin)/a/verify-health";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
 import type { ProjectStatus } from "@/lib/database.types";
@@ -36,7 +42,7 @@ export default async function AdminDashboardPage() {
       .from("projects")
       .select("*")
       .order("created_at", { ascending: false }),
-    supabase.from("steps").select("project_id, status"),
+    supabase.from("steps").select("project_id, status, title, verify_result"),
     supabase
       .from("comments")
       .select("project_id")
@@ -64,8 +70,36 @@ export default async function AdminDashboardPage() {
     }
   }
 
+  // 의뢰인이 「연결 확인하기」를 눌렀는데 내 쪽 문제로 실패한 단계.
+  // 아직 확인 완료·건너뜀이 아닌 것만 — 지금도 의뢰인 화면에 남아 있는 것들이다
+  const projectById = new Map((projects ?? []).map((p) => [p.id, p]));
+  const recentErrors: RecentVerifyError[] = (steps ?? [])
+    .filter(
+      (step) =>
+        step.verify_result?.status === "error" &&
+        step.status !== "verified" &&
+        step.status !== "skipped",
+    )
+    .flatMap((step) => {
+      const project = projectById.get(step.project_id);
+      if (!project || !step.verify_result) return [];
+      return [
+        {
+          projectCode: project.code,
+          projectName: project.name,
+          stepTitle: step.title,
+          result: step.verify_result,
+        },
+      ];
+    })
+    .sort((a, b) => b.result.checked_at.localeCompare(a.result.checked_at));
+
   return (
     <main className="flex flex-col gap-5">
+      <Suspense fallback={<VerifyHealthFallback />}>
+        <VerifyHealth recentErrors={recentErrors} />
+      </Suspense>
+
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">{ko.admin.dashboardTitle}</h1>
         <Link href="/a/new" className={cn(buttonVariants())}>

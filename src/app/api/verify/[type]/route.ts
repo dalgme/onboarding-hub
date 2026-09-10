@@ -87,6 +87,16 @@ export async function POST(
     }
   }
 
+  // error는 의뢰인 문제가 아니라 내 쪽 문제다. 의뢰인이 누르기 전에 대시보드
+  // 「검증 설정 점검」이 잡아야 하지만, 뚫고 왔다면 최소한 로그에는 남긴다
+  if (result.status === "error") {
+    console.error("[verify] 확인 실패", {
+      type,
+      stepId: step.id,
+      detail: result.detail ?? null,
+    });
+  }
+
   const admin = createAdminClient();
   const update =
     result.status === "verified"

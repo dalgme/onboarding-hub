@@ -76,6 +76,8 @@ export const ko = {
       verified: "연결 확인됨",
       not_found: "아직 확인 안 됨",
       error: "확인 오류",
+      // 의뢰인 화면에서는 error를 이렇게 부른다 — 원인은 늘 내 쪽(토큰·네트워크)이다
+      clientError: "제작자 확인 중",
       never: "확인 전",
     },
     tier: {
@@ -270,6 +272,37 @@ export const ko = {
     portalLink: "의뢰인 포털 열기",
     copyPortalLink: "포털 주소 복사",
 
+    health: {
+      title: "검증 설정 점검",
+      description:
+        "의뢰인이 「연결 확인하기」를 누르면 아래 토큰으로 각 서비스에 물어본다. 하나라도 빨간색이면 자동 확인이 되지 않고, 의뢰인 화면에는 「제작자 확인 중」이 뜬다. 접속 정보를 보내기 전에 전부 초록색인지 본다.",
+      checking: "토큰 상태 확인 중…",
+      statuses: {
+        ok: "정상",
+        missing: "미설정",
+        invalid: "토큰 오류",
+        error: "확인 실패",
+      },
+      items: {
+        github: {
+          label: "GitHub",
+          howTo:
+            "GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate. 권한은 read:org 하나면 된다.",
+        },
+        vercel: {
+          label: "Vercel",
+          howTo: "Vercel → Account Settings → Tokens → Create. 이름은 아무거나.",
+        },
+        supabase: {
+          label: "Supabase",
+          howTo: "Supabase → Account → Access Tokens → Generate new token.",
+        },
+      },
+      fix: "만든 토큰을 Vercel 프로젝트 → Settings → Environment Variables 에 위 이름 그대로(Production) 추가하고 Redeploy 한다. 그 뒤 이 화면을 새로고침해 초록색을 확인한다.",
+      recentErrors: "의뢰인 화면에서 실패한 확인",
+      noRecentErrors: "최근 실패한 확인이 없다.",
+    },
+
     tabProcess: "프로세스",
     tabSteps: "단계",
     tabLinks: "링크",
@@ -317,6 +350,12 @@ export const ko = {
       whoClient: "의뢰인",
       whoBoth: "함께",
       stages: [
+        {
+          title: "검증 토큰 등록 (최초 1회)",
+          who: "me",
+          where: "Vercel 환경변수",
+          body: "GITHUB_TOKEN · MY_VERCEL_TOKEN · SUPABASE_ACCESS_TOKEN 세 개를 Vercel에 등록해야 「연결 확인하기」가 동작한다. 대시보드 최상단 「검증 설정 점검」이 전부 초록색인지 확인한 뒤에 의뢰인에게 접속 정보를 보낸다. 빠뜨리면 의뢰인이 확인을 눌렀을 때 내 쪽 문제로 실패한다.",
+        },
         {
           title: "프로젝트 생성",
           who: "me",
