@@ -6,22 +6,34 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeSlug } from "@/lib/slug";
 import { notifyAdmin } from "@/lib/push";
+import { isAutoVerifyType, runVerification } from "@/lib/verify/run";
 import { ko } from "@/content/ko";
 import { CONNECT_META } from "@/lib/steps";
 
-type StepWithProject = { title: string; projects: { name: string; code: string } | null };
+type StepWithProject = {
+  title: string;
+  verify_type: string;
+  projects: { name: string; code: string } | null;
+};
 
 // 알림 문구에 쓸 단계 제목·프로젝트 이름. 의뢰인 세션(RLS)으로 읽는다
-async function describeStep(stepId: string): Promise<{ step: string; project: string; code: string } | null> {
+async function describeStep(
+  stepId: string,
+): Promise<{ step: string; project: string; code: string; verifyType: string } | null> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("steps")
-    .select("title, projects(name, code)")
+    .select("title, verify_type, projects(name, code)")
     .eq("id", stepId)
     .maybeSingle();
   const row = data as unknown as StepWithProject | null;
   if (!row?.projects) return null;
-  return { step: row.title, project: row.projects.name, code: row.projects.code };
+  return {
+    step: row.title,
+    project: row.projects.name,
+    code: row.projects.code,
+    verifyType: row.verify_type,
+  };
 }
 
 export interface ActionResult {
@@ -66,6 +78,13 @@ export async function updateStepStatus(
   if (status === "client_done" || status === "blocked") {
     const info = await describeStep(stepId);
     if (info) {
+      // 자동 확인이 되는 단계는 사람이 누를 필요 없이 지금 바로 검증한다.
+      // 확인되면 그 자리에서 「확인 완료」, 아니면 원인과 함께 알림이 간다 (runVerification 안에서)
+      if (status === "client_done" && isAutoVerifyType(info.verifyType)) {
+        await runVerification(stepId, "client");
+        revalidatePath(`/p/${code}`, "layout");
+        return { ok: true };
+      }
       const message =
         status === "client_done"
           ? ko.push.clientDone(info.project, info.step)

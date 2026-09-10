@@ -31,7 +31,7 @@ export async function verifyGithubMembership(org: string): Promise<VerifyResult>
     );
 
     if (response.status === 404) {
-      return makeResult("not_found", "조직이 없거나 아직 초대되지 않았습니다");
+      return makeResult("not_found", "조직이 없거나 아직 초대되지 않았습니다", "check_invite");
     }
     if (response.status === 401 || response.status === 403) {
       return makeResult("error", `GitHub 토큰 오류 (HTTP ${response.status})`);
@@ -44,7 +44,7 @@ export async function verifyGithubMembership(org: string): Promise<VerifyResult>
     if (membership.state === "active") {
       return makeResult("verified");
     }
-    return makeResult("not_found", "초대는 되었지만 아직 수락 전입니다");
+    return makeResult("not_found", "초대는 되었지만 아직 수락 전입니다", "pending_accept");
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "unknown";
     return makeResult("error", `GitHub API 호출 실패: ${message}`);

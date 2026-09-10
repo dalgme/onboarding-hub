@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { after } from "next/server";
 import { ArrowRight, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 import { createClient } from "@/lib/supabase/server";
+import { reverifyStale } from "@/lib/verify/run";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
@@ -45,6 +47,8 @@ export default async function PortalHomePage({
     .eq("code", code)
     .maybeSingle();
   if (!project) notFound();
+  // 의뢰인이 들어올 때도 오래된 완료 요청을 뒤에서 다시 확인한다 — 화면은 막지 않는다
+  after(() => reverifyStale({ projectId: project.id }));
 
   const [{ data: steps }, { data: links }, { data: comments }] =
     await Promise.all([

@@ -1,4 +1,5 @@
 import { differenceInCalendarDays } from "date-fns";
+import { CONNECT_META } from "@/lib/steps";
 import { ko } from "@/content/ko";
 import type {
   CommentRow,
@@ -23,7 +24,7 @@ export interface TodoItem {
 
 export type StepLite = Pick<
   StepRow,
-  "status" | "owner_side" | "verify_result" | "blocked_reason" | "title" | "order_index"
+  "key" | "status" | "owner_side" | "verify_result" | "blocked_reason" | "title" | "order_index"
 >;
 export type CommentLite = Pick<CommentRow, "author_side" | "read_at" | "deleted_at">;
 export type GuestLite = Pick<ProjectGuestRow, "last_seen_at">;
@@ -74,6 +75,19 @@ export function buildTodos(
   }
   if (unread > 0) {
     items.push({ key: "unread", label: copy.unread(unread), tab: "steps", urgent: true });
+  }
+  // 자동 확인이 "초대 수락 전"으로 끝난 단계 — 다음 행동은 의뢰인이 아니라 나다
+  for (const step of steps) {
+    if (step.status !== "client_done") continue;
+    const code = step.verify_result?.code;
+    if (code !== "pending_accept" && code !== "check_invite") continue;
+    const service = CONNECT_META[step.key]?.serviceName ?? step.title;
+    items.push({
+      key: `invite-${step.key}`,
+      label: code === "pending_accept" ? copy.pendingAccept(service) : copy.checkInvite(service),
+      tab: "steps",
+      urgent: true,
+    });
   }
   if (clientDone > 0) {
     items.push({ key: "verify", label: copy.verify(clientDone), tab: "steps", urgent: false });

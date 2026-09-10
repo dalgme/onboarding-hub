@@ -16,6 +16,7 @@ import {
 } from "@/app/(admin)/a/verify-health";
 import { TodoList } from "@/app/(admin)/a/todo-list";
 import { buildTodos, type TodoItem } from "@/lib/todo";
+import { reverifyStale } from "@/lib/verify/run";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
 import type { ProjectStatus } from "@/lib/database.types";
@@ -34,6 +35,10 @@ const STATUS_VARIANTS: Record<
 export default async function AdminDashboardPage() {
   const supabase = await createClient();
 
+  // 화면이 열리는 것이 곧 시계다 — 오래된 완료 요청을 먼저 다시 확인하고 그린다
+  // (내가 초대를 수락한 뒤 여기를 열면 그 자리에서 「확인 완료」가 된다)
+  await reverifyStale({ limit: 6 });
+
   const [
     { data: projects },
     { data: steps },
@@ -47,7 +52,7 @@ export default async function AdminDashboardPage() {
     supabase
       .from("steps")
       .select(
-        "project_id, status, title, owner_side, order_index, verify_result, blocked_reason",
+        "project_id, key, status, title, owner_side, order_index, verify_result, blocked_reason",
       ),
     supabase
       .from("comments")

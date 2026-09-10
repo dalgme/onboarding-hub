@@ -51,6 +51,7 @@ export async function verifyVercelMembership(team: string): Promise<VerifyResult
       return makeResult(
         "not_found",
         "내가 속한 팀 목록에 없습니다 — 초대 수락 전이거나 팀 이름이 다릅니다",
+        "check_invite",
       );
     }
 
@@ -72,7 +73,7 @@ export async function verifyVercelMembership(team: string): Promise<VerifyResult
       return makeResult("verified");
     }
     if (mine) {
-      return makeResult("not_found", "초대는 되었지만 아직 수락 전입니다");
+      return makeResult("not_found", "초대는 되었지만 아직 수락 전입니다", "pending_accept");
     }
     // 팀 목록에는 있는데 멤버 목록에 없는 경우는 사실상 없다 — 그래도 통과시키지 않는다
     return makeResult("not_found", "팀 멤버 목록에 없습니다");

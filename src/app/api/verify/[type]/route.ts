@@ -1,26 +1,13 @@
-import { NextResponse, type NextRequest, after } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { notifyAdmin } from "@/lib/push";
-import { ko } from "@/content/ko";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { verifyGithubMembership } from "@/lib/verify/github";
-import { verifyVercelMembership } from "@/lib/verify/vercel";
-import { verifySupabaseMembership } from "@/lib/verify/supabase";
-import { makeResult } from "@/lib/verify/types";
-import type { VerifyResult } from "@/lib/database.types";
+import { runVerification } from "@/lib/verify/run";
 
 const bodySchema = z.object({ stepId: z.uuid() });
 const typeSchema = z.enum(["github", "vercel", "supabase"]);
 
-const SLUG_COLUMN = {
-  github: "github_org",
-  vercel: "vercel_team",
-  supabase: "supabase_org",
-} as const;
-
-// 검증 결과는 서버가 결정해 service_role로 기록한다.
-// 호출 자격은 사용자 세션의 RLS(단계 조회 가능 여부)로 확인한다.
+// 「지금 확인」(비상용) 과 의뢰인 화면의 「연결 확인하기」.
+// 자격은 사용자 세션의 RLS(단계 조회 가능 여부)로 확인하고, 판정·저장은 runVerification 이 한다.
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ type: string }> },
@@ -30,7 +17,6 @@ export async function POST(
   if (!typeParsed.success) {
     return NextResponse.json({ error: "unknown verify type" }, { status: 400 });
   }
-  const type = typeParsed.data;
 
   const bodyParsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!bodyParsed.success) {
@@ -47,83 +33,25 @@ export async function POST(
 
   const { data: step } = await supabase
     .from("steps")
-    .select(
-      "id, title, verify_type, project_id, projects(code, name, status, github_org, vercel_team, supabase_org)",
-    )
+    .select("id, verify_type, projects!inner(status)")
     .eq("id", bodyParsed.data.stepId)
     .maybeSingle();
-
   if (!step) {
     return NextResponse.json({ error: "step not found" }, { status: 404 });
   }
-  if (step.verify_type !== type) {
+  if (step.verify_type !== typeParsed.data) {
     return NextResponse.json({ error: "verify type mismatch" }, { status: 400 });
   }
-
-  const project = step.projects as unknown as {
-    code: string;
-    name: string;
-    status: string;
-    github_org: string | null;
-    vercel_team: string | null;
-    supabase_org: string | null;
-  } | null;
-  const slug = project?.[SLUG_COLUMN[type]] ?? null;
-
-  let result: VerifyResult;
-  if (!slug) {
-    result = makeResult("not_found", "조직 이름이 아직 입력되지 않았습니다");
-  } else if (type === "github") {
-    result = await verifyGithubMembership(slug);
-  } else if (type === "vercel") {
-    result = await verifyVercelMembership(slug);
-  } else {
-    const admin = createAdminClient();
-    const { data: adminRow } = await admin
-      .from("admins")
-      .select("email")
-      .limit(1)
-      .maybeSingle();
-    if (!adminRow) {
-      result = makeResult("error", "관리자 이메일이 등록되지 않았습니다");
-    } else {
-      result = await verifySupabaseMembership(slug, adminRow.email);
-    }
+  const project = step.projects as unknown as { status: string } | null;
+  if (project?.status === "closed") {
+    return NextResponse.json({ error: "project closed" }, { status: 403 });
   }
 
-  // error는 의뢰인 문제가 아니라 내 쪽 문제다. 의뢰인이 누르기 전에 대시보드
-  // 「검증 설정 점검」이 잡아야 하지만, 뚫고 왔다면 최소한 로그에는 남긴다
-  if (result.status === "error") {
-    console.error("[verify] 확인 실패", {
-      type,
-      stepId: step.id,
-      detail: result.detail ?? null,
-    });
-    if (project) {
-      const message = ko.push.verifyError(project.name, step.title, result.detail ?? "");
-      after(() =>
-        notifyAdmin({ ...message, url: `/a/${project.code}?tab=steps`, tag: `verify-${step.id}` }),
-      );
-    }
+  // 관리자 클릭인지 의뢰인 클릭인지는 알림 정책에만 쓴다
+  const { data: adminRow } = await supabase.from("admins").select("id").limit(1).maybeSingle();
+  const result = await runVerification(step.id, adminRow ? "admin" : "client");
+  if (!result) {
+    return NextResponse.json({ error: "failed to verify" }, { status: 500 });
   }
-
-  const admin = createAdminClient();
-  const update =
-    result.status === "verified"
-      ? {
-          verify_result: result,
-          status: "verified" as const,
-          verified_at: result.checked_at,
-        }
-      : { verify_result: result };
-  const { error: updateError } = await admin
-    .from("steps")
-    .update(update)
-    .eq("id", step.id);
-
-  if (updateError) {
-    return NextResponse.json({ error: "failed to save" }, { status: 500 });
-  }
-
   return NextResponse.json({ result });
 }

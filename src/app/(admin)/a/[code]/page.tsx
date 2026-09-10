@@ -25,6 +25,7 @@ import { OptionalSteps } from "@/app/(admin)/a/[code]/optional-steps";
 import { AccessPanel } from "@/app/(admin)/a/[code]/access-panel";
 import { VerifyTokenWarning } from "@/app/(admin)/a/verify-health";
 import { ProjectStatus } from "@/app/(admin)/a/[code]/project-status";
+import { reverifyStale } from "@/lib/verify/run";
 
 const TABS = [
   { key: "process", label: ko.admin.tabProcess },
@@ -57,6 +58,9 @@ export default async function AdminProjectPage({
     .eq("code", code)
     .maybeSingle();
   if (!project) notFound();
+
+  // 오래된 완료 요청은 그리기 전에 다시 확인한다 (「지금 확인」을 누를 필요가 없게)
+  await reverifyStale({ projectId: project.id });
 
   const [{ data: steps }, { data: links }, { data: comments }, { data: guests }] =
     await Promise.all([

@@ -18,6 +18,7 @@ export type VerifyResult = {
   status: VerifyStatus;
   checked_at: string;
   detail?: string;
+  code?: string;
   [key: string]: string | undefined;
 }
 

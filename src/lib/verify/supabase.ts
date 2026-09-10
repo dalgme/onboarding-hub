@@ -24,7 +24,7 @@ export async function verifySupabaseMembership(
       return makeResult("error", "Supabase 토큰 오류 (HTTP 401)");
     }
     if (response.status === 403 || response.status === 404) {
-      return makeResult("not_found", "조직이 없거나 아직 초대되지 않았습니다");
+      return makeResult("not_found", "조직이 없거나 아직 초대되지 않았습니다", "check_invite");
     }
     if (!response.ok) {
       return makeResult("error", `Supabase API 오류 (HTTP ${response.status})`);
@@ -37,7 +37,7 @@ export async function verifySupabaseMembership(
     if (found) {
       return makeResult("verified");
     }
-    return makeResult("not_found", "조직 멤버 목록에 없습니다");
+    return makeResult("not_found", "조직 멤버 목록에 없습니다", "check_invite");
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "unknown";
     return makeResult("error", `Supabase API 호출 실패: ${message}`);
