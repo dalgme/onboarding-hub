@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CircleAlert, MonitorUp, ThumbsUp } from "lucide-react";
+import { CircleAlert, MonitorUp, ThumbsUp, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -38,6 +38,18 @@ export function StickyActions({
     return null;
   }
 
+  // 체크리스트는 열 때마다 백지에서 시작한다 — 「이번에 눈으로 확인했다」가 목적이다
+  function openChecklist() {
+    setNotice(null);
+    setErrorMessage(null);
+    setChecked(new Set());
+    setChecklistOpen(true);
+  }
+  function closeChecklist() {
+    setChecklistOpen(false);
+    setChecked(new Set());
+  }
+
   function run(action: () => Promise<{ ok: boolean; message?: string }>, doneMessage: string) {
     setErrorMessage(null);
     startTransition(async () => {
@@ -48,13 +60,15 @@ export function StickyActions({
       }
       setNotice(doneMessage);
       setBlockedOpen(false);
-      setChecklistOpen(false);
+      closeChecklist();
       setBlockedReason("");
       router.refresh();
     });
   }
 
   const isBlocked = step.status === "blocked";
+  // 완료 요청을 이미 보낸 단계 — 다시 보내지 않게 한다 (알림 중복 방지). 막힘·도움 요청은 열어 둔다
+  const isClientDone = step.status === "client_done";
   const allChecked = checklist ? checked.size === checklist.length : true;
 
   function submitDone() {
@@ -70,54 +84,30 @@ export function StickyActions({
   }
 
   return (
-    <div className="sticky bottom-0 -mx-5 border-t border-border bg-background/95 px-5 py-3 backdrop-blur">
-      <div className="mx-auto flex w-full max-w-xl flex-col gap-2">
-        {notice ? (
-          <p className="rounded-md bg-success/10 px-3 py-2 text-sm text-success">
-            {notice}
-          </p>
-        ) : null}
-        {errorMessage ? (
-          <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {errorMessage}
-          </p>
-        ) : null}
-
-        {isBlocked ? (
-          <div className="flex flex-col gap-2">
-            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {ko.stepDetail.blockedBanner(
-                step.blocked_reason === "need_help"
-                  ? ko.stepDetail.needHelpReason
-                  : (step.blocked_reason ?? ""),
-              )}
-            </p>
-            <Button
+    <>
+      {/* 완료 전 자기확인 — 화면을 덮지 않도록 별도 시트로 띄우고 본문은 스크롤된다 */}
+      {checklistOpen && checklist ? (
+        <div
+          role="dialog"
+          aria-label={ko.stepDetail.doneChecklistTitle}
+          className="fixed inset-x-0 bottom-0 z-40 mx-auto flex max-h-[80dvh] w-full max-w-xl flex-col rounded-t-2xl border border-border bg-background shadow-2xl"
+        >
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <span className="text-sm font-semibold">{ko.stepDetail.doneChecklistTitle}</span>
+            <button
               type="button"
-              variant="outline"
-              disabled={pending}
-              onClick={() =>
-                run(
-                  () =>
-                    updateStepStatus({
-                      stepId: step.id,
-                      code: projectCode,
-                      status: "doing",
-                    }),
-                  ko.common.saved,
-                )
-              }
+              onClick={closeChecklist}
+              className="inline-flex min-h-11 min-w-11 items-center justify-center text-muted-foreground hover:text-foreground"
+              aria-label={ko.common.cancel}
             >
-              {ko.stepDetail.resume}
-            </Button>
+              <X className="size-5" />
+            </button>
           </div>
-        ) : checklistOpen && checklist ? (
-          <div className="flex flex-col gap-2">
-            <p className="text-sm font-medium">{ko.stepDetail.doneChecklistTitle}</p>
+          <div className="flex-1 overflow-y-auto px-4 py-3">
             <p className="text-xs leading-relaxed text-muted-foreground">
               {ko.stepDetail.doneChecklistHelp}
             </p>
-            <ul className="flex flex-col gap-1">
+            <ul className="mt-2 flex flex-col gap-1">
               {checklist.map((item, index) => (
                 <li key={item}>
                   <label className="flex min-h-11 cursor-pointer items-start gap-2 rounded-md px-1 py-2 text-sm leading-relaxed hover:bg-accent">
@@ -137,117 +127,163 @@ export function StickyActions({
                 </li>
               ))}
             </ul>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="success"
-                className="flex-1"
-                disabled={pending || !allChecked}
-                onClick={submitDone}
-              >
-                <ThumbsUp className="size-4" />
-                {ko.stepDetail.doneChecklistSubmit}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={pending}
-                onClick={() => setChecklistOpen(false)}
-              >
-                {ko.common.cancel}
-              </Button>
-            </div>
           </div>
-        ) : blockedOpen ? (
-          <div className="flex flex-col gap-2">
-            <label
-              htmlFor="blocked-reason"
-              className="text-sm font-medium"
+          <div className="flex gap-2 border-t border-border px-4 py-3">
+            <Button
+              type="button"
+              variant="success"
+              className="flex-1"
+              disabled={pending || !allChecked}
+              onClick={submitDone}
             >
-              {ko.stepDetail.blockedPrompt}
-            </label>
-            <Textarea
-              id="blocked-reason"
-              value={blockedReason}
-              placeholder={ko.stepDetail.blockedPlaceholder}
-              onChange={(event) => setBlockedReason(event.target.value)}
-            />
-            <div className="flex gap-2">
+              <ThumbsUp className="size-4" />
+              {ko.stepDetail.doneChecklistSubmit}
+            </Button>
+            <Button type="button" variant="ghost" disabled={pending} onClick={closeChecklist}>
+              {ko.common.cancel}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="sticky bottom-0 -mx-5 border-t border-border bg-background/95 px-5 py-3 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-xl flex-col gap-2">
+          {notice ? (
+            <p className="rounded-md bg-success/10 px-3 py-2 text-sm text-success">
+              {notice}
+            </p>
+          ) : null}
+          {errorMessage ? (
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {errorMessage}
+            </p>
+          ) : null}
+
+          {isBlocked ? (
+            <div className="flex flex-col gap-2">
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {ko.stepDetail.blockedBanner(
+                  step.blocked_reason === "need_help"
+                    ? ko.stepDetail.needHelpReason
+                    : (step.blocked_reason ?? ""),
+                )}
+              </p>
               <Button
                 type="button"
-                variant="destructive"
-                className="flex-1"
-                disabled={pending || blockedReason.trim().length === 0}
+                variant="outline"
+                disabled={pending}
                 onClick={() =>
                   run(
                     () =>
                       updateStepStatus({
                         stepId: step.id,
                         code: projectCode,
-                        status: "blocked",
-                        blockedReason: blockedReason.trim(),
+                        status: "doing",
                       }),
-                    ko.stepDetail.blockedSent,
+                    ko.common.saved,
                   )
                 }
               >
-                {ko.stepDetail.blockedSubmit}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={pending}
-                onClick={() => setBlockedOpen(false)}
-              >
-                {ko.common.cancel}
+                {ko.stepDetail.resume}
               </Button>
             </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button
-              type="button"
-              variant="success"
-              className="flex-1"
-              disabled={pending}
-              onClick={() => (checklist ? setChecklistOpen(true) : submitDone())}
-            >
-              <ThumbsUp className="size-4" />
-              {ko.stepDetail.doneButton}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1"
-              disabled={pending}
-              onClick={() => setBlockedOpen(true)}
-            >
-              <CircleAlert className="size-4" />
-              {ko.stepDetail.blockedButton}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              className="flex-1"
-              disabled={pending}
-              onClick={() =>
-                run(
-                  () =>
-                    requestScreenShareHelp({
-                      stepId: step.id,
-                      projectId,
-                      code: projectCode,
-                    }),
-                  ko.stepDetail.helpSent,
-                )
-              }
-            >
-              <MonitorUp className="size-4" />
-              {ko.stepDetail.helpButton}
-            </Button>
-          </div>
-        )}
+          ) : blockedOpen ? (
+            <div className="flex flex-col gap-2">
+              <label htmlFor="blocked-reason" className="text-sm font-medium">
+                {ko.stepDetail.blockedPrompt}
+              </label>
+              <Textarea
+                id="blocked-reason"
+                value={blockedReason}
+                placeholder={ko.stepDetail.blockedPlaceholder}
+                onChange={(event) => setBlockedReason(event.target.value)}
+              />
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="flex-1"
+                  disabled={pending || blockedReason.trim().length === 0}
+                  onClick={() =>
+                    run(
+                      () =>
+                        updateStepStatus({
+                          stepId: step.id,
+                          code: projectCode,
+                          status: "blocked",
+                          blockedReason: blockedReason.trim(),
+                        }),
+                      ko.stepDetail.blockedSent,
+                    )
+                  }
+                >
+                  {ko.stepDetail.blockedSubmit}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={pending}
+                  onClick={() => setBlockedOpen(false)}
+                >
+                  {ko.common.cancel}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {isClientDone && !notice ? (
+                <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+                  {ko.stepDetail.doneSent}
+                </p>
+              ) : null}
+              <div className="flex flex-col gap-2 sm:flex-row">
+                {!isClientDone ? (
+                  <Button
+                    type="button"
+                    variant="success"
+                    className="flex-1"
+                    disabled={pending}
+                    onClick={() => (checklist ? openChecklist() : submitDone())}
+                  >
+                    <ThumbsUp className="size-4" />
+                    {ko.stepDetail.doneButton}
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  disabled={pending}
+                  onClick={() => setBlockedOpen(true)}
+                >
+                  <CircleAlert className="size-4" />
+                  {ko.stepDetail.blockedButton}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="flex-1"
+                  disabled={pending}
+                  onClick={() =>
+                    run(
+                      () =>
+                        requestScreenShareHelp({
+                          stepId: step.id,
+                          projectId,
+                          code: projectCode,
+                        }),
+                      ko.stepDetail.helpSent,
+                    )
+                  }
+                >
+                  <MonitorUp className="size-4" />
+                  {ko.stepDetail.helpButton}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

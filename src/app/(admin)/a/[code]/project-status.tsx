@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { TodoList } from "@/app/(admin)/a/todo-list";
-import { buildTodos, nextAgencyStep, nextClientStep } from "@/lib/todo";
+import { buildTodos, hasClientDone, nextAgencyStep, nextClientStep } from "@/lib/todo";
 import { ko } from "@/content/ko";
 import type {
   CommentRow,
@@ -43,9 +43,8 @@ export function ProjectStatus({
     if (step.verified_at) {
       activities.push({ at: step.verified_at, text: copy.activityVerified(step.title) });
     }
-    if (step.status === "blocked") {
-      activities.push({ at: step.updated_at, text: copy.activityBlocked(step.title) });
-    }
+    // 막힘은 정확한 시각이 없다(updated_at은 검증 호출에도 밀린다) — 「지금 할 일」과
+    // 「의뢰인 다음 할 일」에 이미 드러나므로 여기서는 시각을 지어내지 않는다
   }
   for (const comment of comments) {
     if (comment.author_side !== "client" || comment.deleted_at) continue;
@@ -83,7 +82,13 @@ export function ProjectStatus({
       </div>
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-muted-foreground">{copy.clientNext}</span>
-        <span>{clientNext ? clientNext.title : copy.clientDone}</span>
+        <span>
+          {clientNext
+            ? clientNext.title
+            : hasClientDone(steps)
+              ? copy.clientWaitingMe
+              : copy.clientDone}
+        </span>
       </div>
       <div className="flex flex-col gap-1">
         <span className="text-xs font-medium text-muted-foreground">{copy.myNext}</span>

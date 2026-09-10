@@ -17,6 +17,24 @@ function toKey(base64: string): Uint8Array<ArrayBuffer> {
   return out;
 }
 
+// 이 기기의 구독이 현재 공개키로 만들어졌는가. 키를 바꾸면 옛 구독은 배달되지 않는다
+function sameKey(subscription: PushSubscription): boolean {
+  const current = subscription.options.applicationServerKey;
+  if (!current) return false;
+  const a = new Uint8Array(current);
+  const b = toKey(PUBLIC_KEY);
+  return a.length === b.length && a.every((byte, i) => byte === b[i]);
+}
+
+async function forget(subscription: PushSubscription) {
+  await fetch("/api/push/subscribe", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint: subscription.endpoint }),
+  });
+  await subscription.unsubscribe();
+}
+
 // 관리 화면 헤더의 「휴대폰 알림」 토글. 이 기기의 구독 상태만 다룬다.
 // (브라우저 API 조회이지 데이터 fetch가 아니다 — §11-9 대상이 아니다)
 export function PushToggle() {
@@ -39,7 +57,7 @@ export function PushToggle() {
     }
     navigator.serviceWorker.ready
       .then((registration) => registration.pushManager.getSubscription())
-      .then((subscription) => setState(subscription ? "on" : "off"))
+      .then((subscription) => setState(subscription && sameKey(subscription) ? "on" : "off"))
       .catch(() => setState("off"));
   }, []);
 
@@ -53,6 +71,9 @@ export function PushToggle() {
         return;
       }
       const registration = await navigator.serviceWorker.ready;
+      // 키가 바뀐 뒤 남은 옛 구독이 있으면 먼저 지운다 — 그대로 subscribe 하면 InvalidStateError
+      const stale = await registration.pushManager.getSubscription();
+      if (stale && !sameKey(stale)) await forget(stale);
       const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: toKey(PUBLIC_KEY),
@@ -76,14 +97,7 @@ export function PushToggle() {
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
-      if (subscription) {
-        await fetch("/api/push/subscribe", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint: subscription.endpoint }),
-        });
-        await subscription.unsubscribe();
-      }
+      if (subscription) await forget(subscription);
       setState("off");
     } catch {
       setMessage(copy.failed);

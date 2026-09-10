@@ -94,15 +94,23 @@ export function buildTodos(
   return items;
 }
 
+// 아직 끝나지 않은 상태(내 확인 대기 포함) — 제작자 단계 판정용
 const OPEN: ReadonlySet<StepRow["status"]> = new Set(["todo", "doing", "blocked", "client_done"]);
+// 의뢰인 손에 있는 상태 — client_done은 의뢰인이 끝내고 「내」 확인을 기다리는 것이다 (§5)
+const CLIENT_OPEN: ReadonlySet<StepRow["status"]> = new Set(["todo", "doing", "blocked"]);
 
-// 의뢰인이 다음에 할 단계 — 순서상 첫 번째로 아직 끝나지 않은 의뢰인 단계
+// 의뢰인이 다음에 할 단계 — 순서상 첫 번째로 아직 의뢰인 손에 있는 단계
 export function nextClientStep(steps: StepLite[]): StepLite | null {
   return (
     [...steps]
       .sort((a, b) => a.order_index - b.order_index)
-      .find((step) => step.owner_side === "client" && OPEN.has(step.status)) ?? null
+      .find((step) => step.owner_side === "client" && CLIENT_OPEN.has(step.status)) ?? null
   );
+}
+
+// 의뢰인이 완료 요청을 보내고 내 확인을 기다리는 단계가 있는가
+export function hasClientDone(steps: StepLite[]): boolean {
+  return steps.some((step) => step.owner_side === "client" && step.status === "client_done");
 }
 
 // 내가 다음에 할 단계 — 의뢰인 단계가 모두 끝났을 때 순서상 첫 제작자 단계

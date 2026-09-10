@@ -407,6 +407,7 @@ export async function addAdminComment(
   const { projectId, code, stepId, kind, body } = parsed.data;
 
   const supabase = await createClient();
+  const repliedAt = new Date().toISOString();
   const { error } = await supabase.from("comments").insert({
     project_id: projectId,
     step_id: stepId,
@@ -415,6 +416,18 @@ export async function addAdminComment(
     body,
   });
   if (error) return { ok: false, message: ko.common.error };
+
+  // 답했다는 것은 읽었다는 뜻 — 답글 이전에 온 의뢰인 글을 읽음 처리한다.
+  // 안 그러면 「안 읽은 질문 N건」이 처리 후에도 빨갛게 남아 다시 안 보게 된다.
+  // 실패해도 답글은 이미 저장됐으므로 결과를 뒤집지 않는다
+  await supabase
+    .from("comments")
+    .update({ read_at: repliedAt })
+    .eq("project_id", projectId)
+    .eq("author_side", "client")
+    .is("read_at", null)
+    .lte("created_at", repliedAt);
+
   revalidateProject(code);
   return { ok: true };
 }

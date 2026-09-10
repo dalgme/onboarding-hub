@@ -92,7 +92,7 @@ export const SIMPLE_CONNECT_META: Record<string, SimpleConnectMeta> = {
   },
   "connect-solapi": {
     serviceName: "Solapi",
-    roleName: "멤버",
+    roleName: "Developer",
     createUrl: "https://solapi.com/",
     inviteUrl: "https://console.solapi.com/",
   },
@@ -130,7 +130,7 @@ export const OPTIONAL_STEP_TEMPLATES: StepTemplate[] = [
 
 1. 아래 버튼으로 Solapi에 가입합니다.
 2. **발신번호 등록**을 진행합니다 — 본인(대표자) 인증이 필요해서 의뢰인만 할 수 있는 절차입니다. 통신서비스 이용증명원 등 서류가 필요할 수 있습니다.
-3. 콘솔의 멤버(팀) 관리에서 제 이메일을 초대해 주세요. 초대 기능을 못 찾겠으면 「화면공유로 도움받기」를 눌러 주세요 — API 연동 설정을 함께 진행합니다.
+3. 콘솔 왼쪽 메뉴의 **조직 관리 → 새 팀원 추가**에서 **「초대할 이메일 복사」** 버튼으로 제 이메일을 붙여넣고, 권한은 **Developer**로 지정해 주세요. 메뉴를 못 찾겠으면 「화면공유로 도움받기」를 눌러 주세요 — API 연동 설정을 함께 진행합니다.
 
 ### 자주 막히는 곳
 
@@ -361,8 +361,8 @@ export const DONE_CHECKLIST: Record<string, readonly string[]> = {
     "복사한 이메일로 팀 초대를 보냈고, 멤버 목록에 대기 중으로 보입니다",
   ],
   "connect-solapi": [
-    "발신번호 등록을 신청했습니다",
-    "콘솔의 멤버 관리에서 복사한 이메일로 초대를 보냈습니다",
+    "발신번호 등록을 신청했습니다 (심사 대기 중이어도 됩니다)",
+    "조직 관리 → 새 팀원 추가에서 복사한 이메일로 초대했고, 권한은 Developer입니다",
   ],
   "scope-review": [
     "포털 홈의 「작업 범위」를 끝까지 읽었습니다",

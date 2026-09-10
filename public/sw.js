@@ -38,13 +38,53 @@ self.addEventListener("notificationclick", (event) => {
   const url = (event.notification.data && event.notification.data.url) || "/a";
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
-        if ("focus" in client && new URL(client.url).origin === self.location.origin) {
-          client.navigate(url);
-          return client.focus();
-        }
-      }
-      return self.clients.openWindow(url);
+      const client = clients.find((c) => "focus" in c && "navigate" in c);
+      if (!client) return self.clients.openWindow(url);
+      // 이 서비스워커가 제어하지 않는 창(하드 리로드 직후 등)에서는 navigate()가
+      // 거부된다. 그러면 새 창으로 연다
+      return client
+        .focus()
+        .then((focused) => (focused || client).navigate(url))
+        .catch(() => self.clients.openWindow(url));
     }),
   );
+});
+
+// 브라우저/푸시 서비스가 구독을 교체하면 새 구독을 서버에 다시 등록한다.
+// 같은 출처 fetch라 관리자 세션 쿠키가 실린다. 로그아웃 상태면 401 —
+// 다음 「휴대폰 알림 켜기」가 복구한다. 어떤 경우에도 throw 하지 않는다.
+function vapidKeyFromUrl() {
+  const key = new URL(self.location.href).searchParams.get("vapid");
+  if (!key) return undefined;
+  const padding = "=".repeat((4 - (key.length % 4)) % 4);
+  const raw = atob((key + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+self.addEventListener("pushsubscriptionchange", (event) => {
+  const resubscribe = async () => {
+    try {
+      let subscription = event.newSubscription || null;
+      if (!subscription) {
+        const applicationServerKey =
+          (event.oldSubscription && event.oldSubscription.options.applicationServerKey) ||
+          vapidKeyFromUrl();
+        if (!applicationServerKey) return;
+        subscription = await self.registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey,
+        });
+      }
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(subscription.toJSON()),
+      });
+    } catch {
+      // 재등록 실패는 다음 「휴대폰 알림 켜기」가 복구한다
+    }
+  };
+  event.waitUntil(resubscribe());
 });

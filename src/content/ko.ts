@@ -358,6 +358,7 @@ export const ko = {
       noActivity: "아직 활동 없음",
       clientNext: "의뢰인 다음 할 일",
       clientDone: "없음 — 의뢰인 단계 전부 확인 완료",
+      clientWaitingMe: "없음 — 완료 요청을 보냈고 내 확인을 기다리는 중",
       myNext: "내 다음 할 일",
       waitingClient: (title: string) => `의뢰인의 「${title}」 완료를 기다리는 중`,
       allDone: "없음",
