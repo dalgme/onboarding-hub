@@ -1,7 +1,9 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { checkVerifyTokens, type TokenHealth } from "@/lib/verify/health";
 import { reverifyStale } from "@/lib/verify/run";
-import { pushAdmin, minuteOf } from "@/lib/notify";
+import { pushAdmin, minuteOf, dayKst } from "@/lib/notify";
+import { CONNECT_META, SIMPLE_CONNECT_META } from "@/lib/steps";
+import type { VerifyResult } from "@/lib/database.types";
 import { sweepOutbox } from "@/lib/outbox";
 import { ko } from "@/content/ko";
 
@@ -21,6 +23,8 @@ export interface TickReport {
   reverified: number;
   staleClaims: number;
   outbox: { cleared: number; superseded: number; stalePush: boolean };
+  reminded: number;
+  digest: boolean;
   heartbeat: "sent" | "skipped" | "failed";
   errors: string[];
 }
@@ -96,6 +100,80 @@ async function failStaleClaims(now: Date): Promise<number> {
   return data?.length ?? 0;
 }
 
+const WAKING_START_KST = 8;
+const WAKING_END_KST = 23;
+const ADMIN_WAIT_REMIND_MS = 24 * 60 * 60_000;
+const DIGEST_AFTER_MS = 30 * 60_000;
+const DIGEST_EVERY_HOURS = 4;
+
+function inWakingHours(now: Date): boolean {
+  const hour = new Date(now.getTime() + 9 * 60 * 60_000).getUTCHours();
+  return hour >= WAKING_START_KST && hour < WAKING_END_KST;
+}
+
+// 내가 움직여야 하는 단계(초대 수락·메일함 확인)가 24시간 넘게 그대로면 하루 한 번 다시 알린다.
+// 5일째부터는 초대 만료가 가깝다고 말한다(GitHub·Vercel 초대는 7일 안팎에 만료된다)
+async function remindAdminWaits(now: Date): Promise<number> {
+  const admin = createAdminClient();
+  const { data: rows } = await admin
+    .from("steps")
+    .select("id, key, title, checked_at, verify_result, projects!inner(id, code, name, status)")
+    .eq("status", "client_done")
+    .neq("projects.status", "closed")
+    .limit(50);
+  let sent = 0;
+  for (const row of rows ?? []) {
+    const result = row.verify_result as VerifyResult | null;
+    const project = row.projects as unknown as { id: string; code: string; name: string } | null;
+    if (!result || !project) continue;
+    const code = result.code;
+    if (code !== "pending_accept" && code !== "await_admin_first" && code !== "await_admin_ack") continue;
+    if (result.admin_first_ack === "not_came") continue;
+    const since = new Date(result.first_failed_at ?? row.checked_at ?? result.checked_at).getTime();
+    if (now.getTime() - since < ADMIN_WAIT_REMIND_MS) continue;
+    const days = Math.floor((now.getTime() - since) / (24 * 60 * 60_000));
+    const service = CONNECT_META[row.key]?.serviceName ?? SIMPLE_CONNECT_META[row.key]?.serviceName ?? row.title;
+    const outcome = await pushAdmin({
+      dedupeKey: `await_admin:${row.id}:${dayKst(now)}`,
+      kind: "escalation",
+      projectId: project.id,
+      stepId: row.id,
+      ...ko.push.adminWait(project.name, service, days, days >= 5),
+      url: `/a/${project.code}`,
+    });
+    if (outcome === "sent") sent += 1;
+  }
+  return sent;
+}
+
+// 급한 알림(막힘·화면공유·질문)이 30분 넘게 폰에서 열리지 않았으면 4시간에 한 번 묶어서 다시 알린다.
+// 「보냈다」가 아니라 「열었다(ack)」 기준이다
+async function digestUnacked(now: Date): Promise<boolean> {
+  const admin = createAdminClient();
+  const cutoff = new Date(now.getTime() - DIGEST_AFTER_MS).toISOString();
+  const since = new Date(now.getTime() - 24 * 60 * 60_000).toISOString();
+  const { data: rows } = await admin
+    .from("notices")
+    .select("id, dedupe_key, project_id")
+    .eq("channel", "push")
+    .eq("kind", "client_event")
+    .eq("status", "sent")
+    .is("acked_at", null)
+    .gte("sent_at", since)
+    .lt("sent_at", cutoff)
+    .limit(50);
+  const urgent = (rows ?? []).filter((row) => /:(need_help|blocked):|:comment:/.test(row.dedupe_key));
+  if (urgent.length === 0) return false;
+  const bucket = Math.floor(new Date(now.getTime() + 9 * 60 * 60_000).getUTCHours() / DIGEST_EVERY_HOURS);
+  const outcome = await pushAdmin({
+    dedupeKey: `todo_digest:${dayKst(now)}:${bucket}`,
+    kind: "digest",
+    ...ko.push.digest(urgent.length),
+    url: "/a",
+  });
+  return outcome === "sent";
+}
+
 async function heartbeat(): Promise<TickReport["heartbeat"]> {
   const url = process.env.HEARTBEAT_URL;
   if (!url) return "skipped";
@@ -117,6 +195,8 @@ export async function runTick(now: Date): Promise<TickReport> {
     reverified: 0,
     staleClaims: 0,
     outbox: { cleared: 0, superseded: 0, stalePush: false },
+    reminded: 0,
+    digest: false,
     heartbeat: "skipped",
     errors: [],
   };
@@ -169,6 +249,20 @@ export async function runTick(now: Date): Promise<TickReport> {
     report.outbox = await sweepOutbox(now);
   } catch (cause) {
     report.errors.push(`outbox: ${errorText(cause)}`);
+  }
+
+  // 5b) 내 차례인 채 하루 넘긴 단계 재알림 · 확인 안 한 급한 알림 다이제스트 (깨어 있는 시간에만)
+  if (inWakingHours(now)) {
+    try {
+      report.reminded = await remindAdminWaits(now);
+    } catch (cause) {
+      report.errors.push(`remind: ${errorText(cause)}`);
+    }
+    try {
+      report.digest = await digestUnacked(now);
+    } catch (cause) {
+      report.errors.push(`digest: ${errorText(cause)}`);
+    }
   }
 
   // 6) 완주 기록 + 외부 heartbeat

@@ -19,6 +19,10 @@ export type VerifyResult = {
   checked_at: string;
   detail?: string;
   code?: string;
+  // 누가 다음에 움직이는가 — client(의뢰인이 고친다) / admin(내가 수락·확인) / system(일시 오류)
+  owner?: "client" | "admin" | "system";
+  // Vercel·Supabase·수동 단계: 내가 메일함을 보고 누른 결과
+  admin_first_ack?: "came" | "not_came";
   // 백오프 재확인용. 의뢰인 클릭 횟수(막힘 판정의 유일한 분모)와 자동 재확인 횟수를 따로 센다
   client_attempts?: number;
   auto_checks?: number;

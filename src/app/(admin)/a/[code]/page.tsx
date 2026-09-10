@@ -95,7 +95,7 @@ export default async function AdminProjectPage({
     tab === "settings"
       ? await Promise.all([
           adminAuth.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-          runPreflight({ clientEmail: project.client_email }),
+          runPreflight({ clientEmail: project.client_email, infra: true }),
         ])
       : [{ data: null }, null];
   const accountByEmail: Record<

@@ -1,5 +1,8 @@
 import { format } from "date-fns";
 import { TodoList } from "@/app/(admin)/a/todo-list";
+import { AckPanel, type AckItem } from "@/app/(admin)/a/[code]/ack-panel";
+import { CONNECT_META, SIMPLE_CONNECT_META } from "@/lib/steps";
+import { differenceInHours } from "date-fns";
 import { buildTodos, hasClientDone, nextAgencyStep, nextClientStep } from "@/lib/todo";
 import { ko } from "@/content/ko";
 import type {
@@ -28,6 +31,23 @@ export function ProjectStatus({
 }) {
   const copy = ko.admin.statusCard;
   const todos = buildTodos(project, steps, comments, guests);
+
+  // 내 메일함을 봐야 다음이 정해지는 단계 — 「왔음/안 왔음」
+  const ackItems: AckItem[] = steps
+    .filter(
+      (step) =>
+        step.status === "client_done" &&
+        (step.verify_result?.code === "await_admin_first" ||
+          step.verify_result?.code === "await_admin_ack" ||
+          step.verify_result?.admin_first_ack === "not_came"),
+    )
+    .map((step) => ({
+      stepId: step.id,
+      service: CONNECT_META[step.key]?.serviceName ?? SIMPLE_CONNECT_META[step.key]?.serviceName ?? step.title,
+      title: step.title,
+      hoursWaiting: differenceInHours(new Date(), new Date(step.verify_result?.first_failed_at ?? step.checked_at ?? step.updated_at)),
+      notCame: step.verify_result?.admin_first_ack === "not_came",
+    }));
 
   const lastSeen = guests
     .map((guest) => guest.last_seen_at)
@@ -94,6 +114,7 @@ export function ProjectStatus({
         <span className="text-xs font-medium text-muted-foreground">{copy.myNext}</span>
         <span>{myNext}</span>
       </div>
+      <AckPanel items={ackItems} code={project.code} />
       <div className="flex flex-col gap-1.5 sm:col-span-2">
         <span className="text-xs font-medium text-muted-foreground">{ko.admin.todo.title}</span>
         <TodoList code={project.code} items={todos} />

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { notifyAdmin } from "@/lib/push";
+import { redact } from "@/lib/redact";
 import type { NoticeKind } from "@/lib/database.types";
 
 // 관리자 푸시의 유일한 입구 — 장부(notices)를 거친다.
@@ -55,7 +56,7 @@ export async function pushAdmin(input: AdminPushInput): Promise<PushOutcome> {
           status: "claimed",
           claimed_at: now.toISOString(),
           day_kst: dayKst(now),
-          detail: input.detail?.slice(0, 300) ?? null,
+          detail: input.detail ? redact(input.detail) : null,
         },
         { onConflict: "dedupe_key", ignoreDuplicates: true },
       )
@@ -64,7 +65,7 @@ export async function pushAdmin(input: AdminPushInput): Promise<PushOutcome> {
       // 23505 = 일일 상한 부분 유니크 인덱스 충돌(dedupe_key 충돌은 ignoreDuplicates 가 흡수한다)
       // — 「오늘은 이미 알렸다」이므로 조용히 끝낸다
       if (error.code === "23505") return "duplicate";
-      console.error("[notify] 장부 기록 실패", { key: input.dedupeKey, message: error.message });
+      console.error("[notify] 장부 기록 실패", { key: input.dedupeKey, message: redact(error.message) });
       // 장부가 안 되면 알림을 포기하지는 않는다 — 알림이 장부보다 중요하다
       const fallback = await notifyAdmin({ title: input.title, body: input.body, url: input.url, key: input.dedupeKey });
       return fallback.sent > 0 ? "sent" : "failed";
@@ -100,10 +101,7 @@ export async function pushAdmin(input: AdminPushInput): Promise<PushOutcome> {
       .eq("id", row.id);
     return outcome;
   } catch (cause) {
-    console.error("[notify] 알림 처리 실패", {
-      key: input.dedupeKey,
-      message: cause instanceof Error ? cause.message : String(cause),
-    });
+    console.error("[notify] 알림 처리 실패", { key: input.dedupeKey, message: redact(cause) });
     return "failed";
   }
 }

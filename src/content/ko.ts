@@ -217,6 +217,28 @@ export const ko = {
     doneChecklistHelp:
       "아래를 모두 확인하셨으면 완료를 눌러 주세요. 하나라도 안 됐으면 「막혔어요」로 알려 주시면 됩니다.",
     doneChecklistSubmit: "모두 확인했습니다 — 완료",
+    // 검증 원인 코드 → 의뢰인 문장. 관리자 1인칭 detail 은 의뢰인 화면에 절대 그리지 않는다.
+    // 원칙: 한 일은 인정, 바꿀 것은 하나, 원인은 화면 탓. 금지어: 아직·안 하셨·실패
+    verifyCode: {
+      member_active: "연결이 확인됐습니다.",
+      no_slug: "조직 주소를 먼저 붙여넣어 주시면 바로 확인해 드려요.",
+      org_not_found: "붙여넣은 주소로는 조직이 찾아지지 않아요. 조직 화면 주소창의 주소를 한 번 더 붙여넣어 주세요.",
+      personal_account: "붙여넣은 주소가 개인 계정 주소예요(github.com/이름). 조직 화면의 주소를 다시 붙여넣어 주세요. 조직을 만들지 않으셨다면 1번으로 돌아가시면 됩니다.",
+      check_invite: "초대를 보내신 뒤라면 반영에 잠시 걸릴 수 있어요. 초대 화면에서 위 이메일이 목록에 보이는지만 한 번 확인해 주세요.",
+      await_admin_first: "초대를 보내셨다면 제가 수락하는 중입니다. 확인되는 대로 소식을 드릴게요.",
+      wrong_role: "초대는 잘 됐어요. 역할 하나만 안내된 역할로 바꿔 주시면 끝이에요.",
+      pending_accept: "제작자가 초대를 수락하는 중입니다. 그대로 두셔도 됩니다.",
+      await_admin_ack: "초대는 제작자 메일함으로 갑니다. 도착하면 제가 수락하고 소식을 드릴게요.",
+      token_missing: "제작자가 확인 중입니다. 의뢰인 잘못이 아니니 그대로 두셔도 됩니다.",
+      token_invalid: "제작자가 확인 중입니다. 의뢰인 잘못이 아니니 그대로 두셔도 됩니다.",
+      token_scope: "제작자가 확인 중입니다. 의뢰인 잘못이 아니니 그대로 두셔도 됩니다.",
+      email_mismatch: "제작자가 확인 중입니다. 의뢰인 잘못이 아니니 그대로 두셔도 됩니다.",
+      admin_email_missing: "제작자가 확인 중입니다. 의뢰인 잘못이 아니니 그대로 두셔도 됩니다.",
+      field_missing: "제작자가 확인 중입니다. 의뢰인 잘못이 아니니 그대로 두셔도 됩니다.",
+      rate_limited: "잠시 후 자동으로 다시 확인합니다. 그대로 두셔도 됩니다.",
+      upstream: "잠시 후 자동으로 다시 확인합니다. 그대로 두셔도 됩니다.",
+      network: "잠시 후 자동으로 다시 확인합니다. 그대로 두셔도 됩니다.",
+    } as Record<string, string>,
   },
 
   assist: {
@@ -320,6 +342,16 @@ export const ko = {
       title: `보낼 카톡 1건 · ${client}`,
       body: `${reason} — 대시보드에서 복사해 카톡으로 보낸다.`,
     }),
+    adminWait: (project: string, service: string, days: number, expiring: boolean) => ({
+      title: `${project} · ${service} 초대 ${days}일째 내 차례`,
+      body: expiring
+        ? `초대 메일을 아직 처리하지 않았다. 초대는 보통 7일이면 만료된다 — 오늘 수락하거나 「안 왔음」을 누른다.`
+        : `메일함에서 ${service} 초대를 확인하고 「왔음·수락했음」 또는 「안 왔음」을 누른다.`,
+    }),
+    digest: (count: number) => ({
+      title: `열지 않은 알림 ${count}건`,
+      body: "막힘·화면공유 요청·질문 알림을 30분 넘게 열지 않았다. 대시보드 「지금 할 일」을 본다.",
+    }),
     outboxStale: (count: number) => ({
       title: `보낼 카톡 ${count}건이 기다리는 중`,
       body: "4시간 넘게 보내지 않은 문구가 있다. 지금 보내거나 「보내지 않음」으로 정리한다.",
@@ -380,6 +412,38 @@ export const ko = {
     portalLink: "의뢰인 포털 열기",
     copyPortalLink: "포털 주소 복사",
 
+    ack: {
+      title: "초대 확인 — 내 메일함을 보고 누른다",
+      question: (service: string) => `${service} 초대 메일이 왔나요?`,
+      came: "왔음 · 수락했음",
+      notCame: "안 왔음",
+      waiting: (hours: number) => `완료 요청 ${hours}시간 전`,
+      waitingClient: "「안 왔음」 처리됨 — 의뢰인 재확인 대기",
+      cameDone: "확인 완료로 처리했다.",
+      notYet: "수락했음으로 기록했다. API 에서는 아직 안 보인다 — 수락 반영까지 몇 분 걸린다. tick 이 자동으로 다시 본다.",
+      notCameDone: "의뢰인 원인으로 전환했다. 「보낼 카톡」에 초대 확인 부탁 문구를 올렸다.",
+    },
+    // 검증 원인 코드 → 관리자 한 줄 (칩·푸시·테이블)
+    verifyCode: {
+      member_active: "연결 확인됨",
+      no_slug: "의뢰인이 조직 주소를 안 넣음",
+      org_not_found: "조직 이름이 틀림",
+      personal_account: "개인 계정 주소를 넣음",
+      check_invite: "초대가 안 보임 — 의뢰인 재확인",
+      await_admin_first: "초대 메일 확인 필요 — 왔음/안 왔음",
+      wrong_role: "역할이 다름",
+      pending_accept: "초대 수락 필요 (내 메일함)",
+      await_admin_ack: "초대 메일 확인 필요 (내 메일함)",
+      token_missing: "토큰 미설정",
+      token_invalid: "토큰 오류",
+      token_scope: "토큰 권한 부족",
+      email_mismatch: "계정 이메일 불일치",
+      admin_email_missing: "관리자 이메일 없음",
+      field_missing: "API 응답에 이메일 없음",
+      rate_limited: "API 한도 — 잠시 후 자동 재확인",
+      upstream: "API 오류 — 잠시 후 자동 재확인",
+      network: "네트워크 — 잠시 후 자동 재확인",
+    } as Record<string, string>,
     outbox: {
       title: "보낼 카톡",
       countTitle: (n: number) => `보낼 카톡 ${n}건`,
@@ -410,6 +474,13 @@ export const ko = {
         scope_ready: "범위 안내",
         link_pinned: "링크 안내",
         closed: "완료 안내",
+        client_event: "의뢰인 행동 알림",
+        verify_event: "자동 확인 알림",
+        token_event: "토큰 상태 알림",
+        escalation: "재알림",
+        digest: "묶음 알림",
+        push_test: "테스트 알림",
+        preflight: "사전 점검",
       } as Record<string, string>,
     },
     preflight: {
@@ -429,6 +500,13 @@ export const ko = {
       clientEmailTypo: (domain: string, suggestion: string) =>
         `의뢰인 이메일 도메인 ${domain} — ${suggestion} 의 오타가 아닌지 확인`,
       clientEmailNoMx: (domain: string) => `의뢰인 이메일 도메인 ${domain} 이(가) 메일을 받지 못하는 도메인으로 보인다 — 철자 확인`,
+      pushNotConfigured: "휴대폰 알림 키(VAPID)가 없다 — 의뢰인 행동을 폰으로 받지 못한다",
+      pushNoDevice: "알림을 받을 기기가 없다 — 대시보드 헤더 「휴대폰 알림 켜기」",
+      pushNoAck: "지난 7일간 폰에서 열린 알림이 없다 — 알림이 실제로 오는지 「테스트」로 확인",
+      cronNoSecret: "CRON_SECRET 이 없어 자동 점검(크론)이 닫혀 있다 — Vercel 환경변수에 추가 후 Redeploy",
+      cronStale: "자동 점검(크론)이 45분 넘게 완주하지 않았다 — Vercel Cron 상태 확인",
+      otpMismatch: (actualHours: number, expectedHours: number) =>
+        `로그인 링크 실제 유효시간은 ${actualHours}시간인데 안내는 ${expectedHours}시간이다 — Supabase Auth › Email OTP Expiration 을 맞춘다`,
     },
     tick: {
       title: "자동 점검(크론)",
@@ -469,6 +547,18 @@ export const ko = {
       issueWarning:
         "검증 토큰이 아직 준비되지 않았다. 지금 접속 정보를 보내면 의뢰인이 「연결 확인하기」를 눌러도 자동 확인이 되지 않고 「제작자 확인 중」이 뜬다.",
       issueWarningLink: "대시보드에서 토큰 상태 보기",
+      recentActions: "최근 자동 조치 10건 (알림·보낼 카톡)",
+      noRecentActions: "아직 기록이 없다.",
+      channelPush: "푸시",
+      channelOutbox: "보낼 카톡",
+      noticeStatus: {
+        claimed: "보내는 중",
+        pending: "대기",
+        sent: "보냄",
+        failed: "실패",
+        skipped: "거둠",
+        superseded: "대체됨",
+      } as Record<string, string>,
       recentErrors: "의뢰인 화면에서 실패한 확인",
       noRecentErrors: "최근 실패한 확인이 없다.",
     },
@@ -481,6 +571,11 @@ export const ko = {
       verify: (n: number) => `완료 요청 확인 ${n}건`,
       pendingAccept: (service: string) => `${service} 초대 수락 필요 (내 메일함)`,
       checkInvite: (service: string) => `${service} 초대 확인 필요`,
+      awaitAdmin: (service: string, hours: number) => `${service} 초대 메일 확인 — 왔음/안 왔음 (${hours}시간째)`,
+      clientCause: (service: string, label: string) => `${service}: ${label} — 의뢰인 조치 대기`,
+      systemStuck: (service: string) => `${service} 자동 확인 지연 (일시 오류)`,
+      slugStale: (title: string) => `「${title}」 이틀째 초대 전 — 카톡 한 줄`,
+      suggestAssisted: "assisted 전환 제안 — 재시도 3회 이상",
       blocked: (n: number) => `막힘 ${n}건`,
       needHelp: (n: number) => `화면공유 요청 ${n}건`,
       verifyError: (n: number) => `확인 실패 ${n}건`,
@@ -751,6 +846,11 @@ export const ko = {
         "체크리스트를 모두 마쳤습니까? 종료하면 상태가 closed로 바뀝니다.",
       closedAt: (date: string) => `${date} 종료됨`,
       notReady: "위 항목을 순서대로 모두 체크하면 종료할 수 있습니다.",
+      revokeButton: "접근 회수 실행 (원클릭)",
+      revokeConfirm: "이 프로젝트의 의뢰인 포털 접근을 회수합니다. 접근 이메일 행을 지우고, 다른 진행 중 프로젝트에 없는 이메일은 로그인 계정도 삭제합니다. 진행할까요?",
+      revokeDone: (guests: number, users: number, kept: number) =>
+        `접근 이메일 ${guests}건 삭제 · 로그인 계정 ${users}건 삭제${kept > 0 ? ` · 다른 프로젝트에 남아 계정 유지 ${kept}건` : ""}`,
+      revokeNothing: "회수할 접근이 없다.",
     },
   },
 

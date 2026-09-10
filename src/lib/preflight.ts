@@ -2,6 +2,8 @@ import { resolveMx } from "node:dns/promises";
 import { z } from "zod";
 import { checkVerifyTokens, type TokenHealth } from "@/lib/verify/health";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { pushConfigured } from "@/lib/push";
+import { magicLinkTtlHours } from "@/lib/magic-link";
 import { ko } from "@/content/ko";
 
 // 사전 점검(preflight) — 의뢰인에게 접속 정보를 만들기 전에 「의뢰인 초대를 직접
@@ -70,7 +72,60 @@ async function hasMx(domain: string): Promise<boolean | null> {
   }
 }
 
-export async function runPreflight(input: { clientEmail?: string | null } = {}): Promise<PreflightReport> {
+// 알림 인프라(푸시·크론·로그인 링크 유효시간)는 발급을 막지 않는다 — 노랑으로만.
+// 발급 액션 안에서는 부르지 않는다(의뢰인 흐름과 무관한 외부 호출을 얹지 않는다)
+async function infraIssues(): Promise<PreflightIssue[]> {
+  const copy = ko.admin.preflight;
+  const issues: PreflightIssue[] = [];
+  const admin = createAdminClient();
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60_000).toISOString();
+  const [{ data: subs }, { data: adminRow }] = await Promise.all([
+    admin.from("push_subscriptions").select("last_ack_at"),
+    admin.from("admins").select("last_tick_finished_at").order("created_at").limit(1).maybeSingle(),
+  ]);
+  // P5 푸시 배달 가능성
+  if (!pushConfigured()) issues.push({ key: "push", level: "yellow", message: copy.pushNotConfigured });
+  else if (!subs || subs.length === 0) issues.push({ key: "push", level: "yellow", message: copy.pushNoDevice });
+  else if (!subs.some((sub) => sub.last_ack_at && sub.last_ack_at > weekAgo)) {
+    issues.push({ key: "push", level: "yellow", message: copy.pushNoAck });
+  }
+  // P9 크론 생존
+  const finished = adminRow?.last_tick_finished_at;
+  if (!process.env.CRON_SECRET) issues.push({ key: "cron", level: "yellow", message: copy.cronNoSecret });
+  else if (!finished || Date.now() - new Date(finished).getTime() > 45 * 60_000) {
+    issues.push({ key: "cron", level: "yellow", message: copy.cronStale });
+  }
+  // P11 로그인 링크 유효시간 — Supabase 설정(mailer_otp_exp)과 안내 숫자가 같은가
+  const token = process.env.SUPABASE_ACCESS_TOKEN;
+  const ref = /^https:\/\/([a-z0-9]+)\.supabase\.co/.exec(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "")?.[1];
+  if (token && ref) {
+    try {
+      const response = await fetch(`https://api.supabase.com/v1/projects/${ref}/config/auth`, {
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+        signal: AbortSignal.timeout(6_000),
+      });
+      if (response.ok) {
+        const config = (await response.json()) as { mailer_otp_exp?: number };
+        const expected = magicLinkTtlHours() * 3600;
+        if (typeof config.mailer_otp_exp === "number" && config.mailer_otp_exp !== expected) {
+          issues.push({
+            key: "otp_exp",
+            level: "yellow",
+            message: copy.otpMismatch(Math.round(config.mailer_otp_exp / 3600), magicLinkTtlHours()),
+          });
+        }
+      }
+    } catch {
+      // 확인 못 하면 조용히 넘어간다 — 발급과 무관하다
+    }
+  }
+  return issues;
+}
+
+export async function runPreflight(
+  input: { clientEmail?: string | null; infra?: boolean } = {},
+): Promise<PreflightReport> {
   const copy = ko.admin.preflight;
   const issues: PreflightIssue[] = [];
 
@@ -115,6 +170,14 @@ export async function runPreflight(input: { clientEmail?: string | null } = {}):
       } else if ((await hasMx(domain)) === false) {
         issues.push({ key: "client_email", level: "yellow", message: copy.clientEmailNoMx(domain) });
       }
+    }
+  }
+
+  if (input.infra) {
+    try {
+      issues.push(...(await infraIssues()));
+    } catch {
+      // 노랑 항목 실패는 판정에 영향이 없다
     }
   }
 

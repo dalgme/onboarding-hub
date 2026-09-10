@@ -33,6 +33,9 @@ function VerifyBadge({
       <Badge variant={variant}>{label}</Badge>
       <span className="text-xs text-muted-foreground">
         {format(new Date(result.checked_at), "MM.dd HH:mm")}
+        {side === "admin" && result.code && result.status !== "verified" && ko.admin.verifyCode[result.code]
+          ? ` · ${ko.admin.verifyCode[result.code]}`
+          : ""}
       </span>
     </span>
   );

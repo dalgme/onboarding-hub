@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OFFBOARD_CHECKLIST } from "@/lib/offboard";
-import { closeProject } from "@/app/(admin)/a/actions";
+import { closeProject, revokeGuestAccess } from "@/app/(admin)/a/actions";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
 
@@ -25,6 +25,25 @@ export function OffboardPanel({
   const [pending, startTransition] = useTransition();
   const [checkedCount, setCheckedCount] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [revokeNote, setRevokeNote] = useState<string | null>(null);
+
+  function revoke() {
+    if (!window.confirm(ko.admin.offboard.revokeConfirm)) return;
+    setRevokeNote(null);
+    startTransition(async () => {
+      const result = await revokeGuestAccess({ projectId, code: projectCode });
+      if (!result.ok) {
+        setRevokeNote(result.message ?? ko.common.error);
+        return;
+      }
+      setRevokeNote(
+        (result.removedGuests ?? 0) === 0
+          ? ko.admin.offboard.revokeNothing
+          : ko.admin.offboard.revokeDone(result.removedGuests ?? 0, result.deletedUsers ?? 0, result.keptUsers?.length ?? 0),
+      );
+      router.refresh();
+    });
+  }
 
   const allChecked = checkedCount >= OFFBOARD_CHECKLIST.length;
 
@@ -95,6 +114,14 @@ export function OffboardPanel({
                   <span className="text-xs leading-relaxed text-muted-foreground">
                     {item.detail}
                   </span>
+                  {item.key === "revoke-guest" ? (
+                    <span className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <Button type="button" size="sm" variant="outline" disabled={pending} onClick={revoke}>
+                        {ko.admin.offboard.revokeButton}
+                      </Button>
+                      {revokeNote ? <span className="text-xs text-muted-foreground">{revokeNote}</span> : null}
+                    </span>
+                  ) : null}
                 </span>
               </label>
             </li>

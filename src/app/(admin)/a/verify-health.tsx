@@ -33,7 +33,7 @@ export async function VerifyHealth({
   recentErrors: RecentVerifyError[];
 }) {
   const supabase = await createClient();
-  const [tokens, { data: adminRow }] = await Promise.all([
+  const [tokens, { data: adminRow }, { data: recentNotices }] = await Promise.all([
     checkVerifyTokens(),
     supabase
       .from("admins")
@@ -41,6 +41,11 @@ export async function VerifyHealth({
       .order("created_at")
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from("notices")
+      .select("id, kind, channel, status, title, detail, created_at, projects(name)")
+      .order("created_at", { ascending: false })
+      .limit(10),
   ]);
   const allOk = tokens.every((token) => token.status === "ok");
   const copy = ko.admin.health;
@@ -96,6 +101,27 @@ export async function VerifyHealth({
         <Badge variant={tick.ok ? "success" : "destructive"}>{tick.ok ? "정상" : "확인 필요"}</Badge>
         <span className="text-xs text-muted-foreground">{tick.text}</span>
       </p>
+
+      <details className="mt-3 border-t border-border/60 pt-3 text-xs">
+        <summary className="cursor-pointer font-medium text-muted-foreground">{copy.recentActions}</summary>
+        {(recentNotices ?? []).length === 0 ? (
+          <p className="mt-1 text-muted-foreground">{copy.noRecentActions}</p>
+        ) : (
+          <ul className="mt-1 flex flex-col gap-0.5 text-muted-foreground">
+            {(recentNotices ?? []).map((row) => {
+              const project = row.projects as unknown as { name: string } | null;
+              return (
+                <li key={row.id}>
+                  {format(new Date(row.created_at), "MM.dd HH:mm")} · {row.channel === "push" ? copy.channelPush : copy.channelOutbox} ·{" "}
+                  {ko.admin.outbox.kinds[row.kind] ?? row.kind} · {copy.noticeStatus[row.status] ?? row.status}
+                  {project ? ` · ${project.name}` : ""}
+                  {row.title ? ` · ${row.title}` : row.detail ? ` · ${row.detail}` : ""}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </details>
 
       <div className="mt-3 border-t border-border/60 pt-3">
         <p className="text-xs font-medium text-muted-foreground">

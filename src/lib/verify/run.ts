@@ -3,10 +3,12 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyGithubMembership } from "@/lib/verify/github";
 import { verifyVercelMembership } from "@/lib/verify/vercel";
 import { verifySupabaseMembership } from "@/lib/verify/supabase";
-import { makeResult } from "@/lib/verify/types";
+import { classify, isVerifyCode, ownerOf, type VerifyOwner } from "@/lib/verify/types";
+import { ADMIN_ACK_KEYS } from "@/lib/steps";
 import { pushAdmin, minuteOf } from "@/lib/notify";
 import { onStepVerified, onVerifyClientCause } from "@/lib/outbox";
 import { ko } from "@/content/ko";
+import { redact } from "@/lib/redact";
 import type { StepStatus, VerifyResult, VerifyType } from "@/lib/database.types";
 
 // 자동 검증의 단일 진입점. 사람이 「지금 확인」을 누르지 않아도 돈다:
@@ -66,24 +68,33 @@ async function loadStep(stepId: string): Promise<StepContext | null> {
 }
 
 async function compute(type: AutoVerifyType, slug: string | null): Promise<VerifyResult> {
-  if (!slug) {
-    return makeResult("not_found", "조직 이름이 아직 입력되지 않았습니다", "no_slug");
-  }
+  if (!slug) return classify("no_slug", "조직 이름이 아직 입력되지 않았습니다");
   if (type === "github") return verifyGithubMembership(slug);
   if (type === "vercel") return verifyVercelMembership(slug);
   const admin = createAdminClient();
   const { data: adminRow } = await admin.from("admins").select("email").limit(1).maybeSingle();
-  if (!adminRow) return makeResult("error", "관리자 이메일이 등록되지 않았습니다");
+  if (!adminRow) return classify("admin_email_missing", "관리자 이메일이 등록되지 않았습니다");
   return verifySupabaseMembership(slug, adminRow.email);
 }
 
 // 이전 결과와 트리거로 횟수·다음 확인 시각·최초 실패 시각을 채운다
+const SYSTEM_ESCALATE_AFTER = 3;
+
 function withSchedule(
-  result: VerifyResult,
+  computed: VerifyResult,
   previous: VerifyResult | null,
   trigger: VerifyTrigger,
 ): VerifyResult {
-  if (result.status === "verified") return result;
+  if (computed.status === "verified") return computed;
+  let result = computed;
+  // 내가 「안 왔음」을 눌렀으면 API 가 여전히 「구분 불가」라고 해도 의뢰인 원인(check_invite)으로 본다.
+  // 초대가 실제로 오면 pending_accept·verified 로 바뀌므로 그때 풀린다
+  if (previous?.admin_first_ack === "not_came" && result.code === "await_admin_first") {
+    result = { ...classify("check_invite", result.detail), checked_at: result.checked_at };
+  }
+  if (previous?.admin_first_ack && result.status === "not_found") {
+    result = { ...result, admin_first_ack: previous.admin_first_ack };
+  }
   // 최초 실패 시각은 「같은 원인이 이어지는 동안」 유지한다. 중간에 낀 일시 오류(error)는
   // 원인을 바꾸지 않으므로 리셋하지 않는다 — 리셋되면 재요청 카드가 새 키로 다시 만들어진다
   const sameCause =
@@ -132,7 +143,7 @@ export async function runVerification(
     : query.is("verify_result", null);
   const { data: written, error } = await query.select("id");
   if (error) {
-    console.error("[verify] 저장 실패", { stepId, message: error.message });
+    console.error("[verify] 저장 실패", { stepId, message: redact(error.message) });
     return result;
   }
   if (!written || written.length === 0) return result;
@@ -143,7 +154,8 @@ export async function runVerification(
       type: step.verify_type,
       stepId: step.id,
       trigger,
-      detail: result.detail ?? null,
+      code: result.code ?? null,
+      detail: redact(result.detail ?? ""),
     });
   }
 
@@ -170,15 +182,30 @@ export async function runVerification(
       });
       await onStepVerified(stepInfo, result.checked_at, trigger);
     });
-  } else if (result.status === "error" && trigger !== "admin" && (trigger === "client" || !wasError)) {
-    after(() =>
-      pushAdmin({
-        ...base,
-        dedupeKey: `verify_event:${step.id}:error:${minuteOf(result.first_failed_at ?? result.checked_at)}`,
-        ...ko.push.verifyError(project.name, step.title, result.detail ?? ""),
-        detail: result.detail,
-      }),
-    );
+  } else if (result.status === "error" && trigger !== "admin") {
+    const owner: VerifyOwner | null = ownerOf(result);
+    if (owner === "system") {
+      // 일시 오류는 조용히 백오프한다. 자동 확인이 연속 3회 막히면 그때 한 번 알린다
+      if ((result.auto_checks ?? 0) >= SYSTEM_ESCALATE_AFTER) {
+        after(() =>
+          pushAdmin({
+            ...base,
+            dedupeKey: `verify_event:${step.id}:system_stuck:${minuteOf(result.first_failed_at ?? result.checked_at)}`,
+            ...ko.push.verifyError(project.name, step.title, result.detail ?? ""),
+            detail: result.detail,
+          }),
+        );
+      }
+    } else if (trigger === "client" || !wasError) {
+      after(() =>
+        pushAdmin({
+          ...base,
+          dedupeKey: `verify_event:${step.id}:error:${minuteOf(result.first_failed_at ?? result.checked_at)}`,
+          ...ko.push.verifyError(project.name, step.title, result.detail ?? ""),
+          detail: result.detail,
+        }),
+      );
+    }
   } else if (result.status === "not_found" && trigger !== "admin") {
     // 의뢰인이 「완료했습니다」를 누른 뒤 첫 1회만 알린다 (client_done 전이 시각이 에폭).
     // 완료 전(doing)의 「연결 확인하기」는 의뢰인 스스로 보는 확인이라 알리지 않는다.
@@ -186,10 +213,11 @@ export async function runVerification(
     const epoch = step.checked_at ? minuteOf(step.checked_at) : minuteOf(result.checked_at);
     after(async () => {
       if (trigger === "client" && step.status === "client_done") {
+        const label = isVerifyCode(result.code) ? ko.admin.verifyCode[result.code] : (result.detail ?? "");
         await pushAdmin({
           ...base,
           dedupeKey: `verify_event:${step.id}:pending:${epoch}`,
-          ...ko.push.autoPending(project.name, step.title, result.detail ?? ""),
+          ...ko.push.autoPending(project.name, step.title, label),
         });
       } else if (wasError) {
         await pushAdmin({
@@ -250,9 +278,21 @@ export async function reverifyStale(options: {
     await Promise.all(due.map((row) => runVerification(row.id, "auto").catch(() => null)));
     return due.length;
   } catch (cause) {
-    console.error("[verify] 재검증 실패", {
-      message: cause instanceof Error ? cause.message : String(cause),
-    });
+    console.error("[verify] 재검증 실패", { message: redact(cause) });
     return 0;
   }
+}
+
+// API 로 확인할 수 없는 단계(Anthropic·Resend·Solapi)의 완료 요청 — 「초대가 내 메일함으로
+// 왔는가」는 내가 봐야 안다. owner=admin 으로 표시해 「왔음/안 왔음」 2탭이 뜨게 한다
+export async function markAwaitAdminAck(stepId: string): Promise<void> {
+  const step = await loadStep(stepId);
+  if (!step || !ADMIN_ACK_KEYS.has(step.key) || step.status !== "client_done") return;
+  if (step.verify_result?.code === "await_admin_ack") return;
+  const admin = createAdminClient();
+  await admin
+    .from("steps")
+    .update({ verify_result: classify("await_admin_ack", "초대는 내 메일함으로 온다 — 확인 필요") })
+    .eq("id", step.id)
+    .eq("status", "client_done");
 }

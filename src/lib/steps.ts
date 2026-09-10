@@ -77,6 +77,14 @@ export interface SimpleConnectMeta {
   inviteUrl: string;
 }
 
+// API 로 확인할 수 없어 「초대가 내 메일함에 왔는가」를 내가 눈으로 확인하는 단계.
+// 의뢰인이 완료를 누르면 owner=admin(await_admin_ack) 이 되고, 대시보드에 「왔음/안 왔음」 2탭이 뜬다
+export const ADMIN_ACK_KEYS: ReadonlySet<string> = new Set([
+  "connect-anthropic",
+  "connect-resend",
+  "connect-solapi",
+]);
+
 export const SIMPLE_CONNECT_META: Record<string, SimpleConnectMeta> = {
   "connect-anthropic": {
     serviceName: "Anthropic Console",

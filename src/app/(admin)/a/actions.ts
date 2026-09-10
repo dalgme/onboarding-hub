@@ -11,7 +11,10 @@ import { OPTIONAL_STEP_TEMPLATES, STEP_TEMPLATE } from "@/lib/steps";
 import { normalizeSlug } from "@/lib/slug";
 import { buildMagicLinkUrl } from "@/lib/magic-link";
 import { preflightBlockReason } from "@/lib/preflight";
-import { onAdminReplied, portalUrl, recordCredentialsSent } from "@/lib/outbox";
+import { onAdminNotCame, onAdminReplied, portalUrl, recordCredentialsSent } from "@/lib/outbox";
+import { runVerification } from "@/lib/verify/run";
+import { classify } from "@/lib/verify/types";
+import { CONNECT_META } from "@/lib/steps";
 import { after } from "next/server";
 import { ko } from "@/content/ko";
 import type { ActionResult } from "@/app/(guest)/p/[code]/actions";
@@ -755,4 +758,134 @@ export async function markAccessSent(
   await recordCredentialsSent({ projectId, email: email.toLowerCase(), body: bodyMasked });
   revalidateProject(code);
   return { ok: true };
+}
+
+
+// ── 초대 확인 2탭 ────────────────────────────────────────────────
+// Vercel·Supabase 는 「초대 전」과 「내 수락 전」을 API 로 구분하지 못하고, Anthropic 등 수동 단계는
+// API 자체가 없다. 내 메일함을 본 결과를 여기서 기록한다.
+//  왔음(수락했음) → API 단계는 즉시 재검증, 수동 단계는 확인 완료
+//  안 왔음        → 의뢰인 원인으로 전환 + 「초대 확인 부탁」 카톡 문구
+const ackSchema = z.object({
+  stepId: z.uuid(),
+  code: z.string().min(1),
+  came: z.boolean(),
+});
+
+export async function ackInvite(
+  input: z.infer<typeof ackSchema>,
+): Promise<ActionResult> {
+  const parsed = ackSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: ko.common.error };
+  if (!(await isAdminUser())) return { ok: false, message: ko.common.unauthorized };
+  const { stepId, code, came } = parsed.data;
+
+  const admin = createAdminClient();
+  const { data: step } = await admin
+    .from("steps")
+    .select("id, key, title, status, verify_type, verify_result, projects(id, code, name, client_name, github_org, vercel_team, supabase_org)")
+    .eq("id", stepId)
+    .maybeSingle();
+  const row = step as unknown as {
+    id: string; key: string; title: string; status: string; verify_type: string;
+    verify_result: import("@/lib/database.types").VerifyResult | null;
+    projects: { id: string; code: string; name: string; client_name: string; github_org: string | null; vercel_team: string | null; supabase_org: string | null } | null;
+  } | null;
+  if (!row?.projects || row.status !== "client_done") return { ok: false, message: ko.common.error };
+  const now = new Date();
+
+  if (came) {
+    if (row.verify_type === "manual") {
+      await admin
+        .from("steps")
+        .update({ status: "verified", verified_at: now.toISOString(), verify_result: { ...classify("member_active"), admin_first_ack: "came" } })
+        .eq("id", row.id);
+      revalidateProject(code);
+      return { ok: true };
+    }
+    // API 단계: 「왔음·수락했음」이면 지금 확인한다. 아직이면 백오프 없이 5분 뒤 tick 이 다시 본다
+    await admin
+      .from("steps")
+      .update({ verify_result: { ...(row.verify_result ?? classify("await_admin_first")), admin_first_ack: "came" } })
+      .eq("id", row.id);
+    const result = await runVerification(row.id, "admin");
+    revalidateProject(code);
+    return result?.status === "verified"
+      ? { ok: true }
+      : { ok: true, message: ko.admin.ack.notYet };
+  }
+
+  // 안 왔음: 의뢰인이 초대를 다시 보게 한다
+  const base = row.verify_result ?? classify(row.verify_type === "manual" ? "await_admin_ack" : "await_admin_first");
+  const next = row.verify_type === "manual"
+    ? { ...base, admin_first_ack: "not_came" as const }
+    : { ...classify("check_invite", base.detail), first_failed_at: base.first_failed_at ?? now.toISOString(), client_attempts: base.client_attempts, auto_checks: base.auto_checks, admin_first_ack: "not_came" as const };
+  await admin.from("steps").update({ verify_result: next }).eq("id", row.id);
+
+  const { data: adminRow } = await admin.from("admins").select("email").limit(1).maybeSingle();
+  const meta = CONNECT_META[row.key];
+  const slug = meta ? row.projects[meta.slugColumn] : null;
+  await onAdminNotCame(
+    { id: row.id, key: row.key, title: row.title, projectId: row.projects.id, projectCode: row.projects.code, projectName: row.projects.name, clientName: row.projects.client_name },
+    slug,
+    adminRow?.email ?? "",
+    now,
+  );
+  revalidateProject(code);
+  return { ok: true, message: ko.admin.ack.notCameDone };
+}
+
+
+// ── 종료 5번: 의뢰인 포털 접근 회수 원클릭 ────────────────────────
+// project_guests 행을 지우고, 같은 이메일이 다른 진행 중 프로젝트의 게스트가 아니면 Auth 사용자도 지운다.
+// 비밀번호에는 만료가 없으므로 이 단계를 건너뛰면 접근이 영구히 남는다(§10)
+const revokeSchema = z.object({ projectId: z.uuid(), code: z.string().min(1) });
+
+export interface RevokeResult extends ActionResult {
+  removedGuests?: number;
+  deletedUsers?: number;
+  keptUsers?: string[];
+}
+
+export async function revokeGuestAccess(
+  input: z.infer<typeof revokeSchema>,
+): Promise<RevokeResult> {
+  const parsed = revokeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: ko.common.error };
+  if (!(await isAdminUser())) return { ok: false, message: ko.common.unauthorized };
+  const { projectId, code } = parsed.data;
+
+  const admin = createAdminClient();
+  const { data: guests } = await admin
+    .from("project_guests")
+    .select("id, email")
+    .eq("project_id", projectId);
+  const emails = [...new Set((guests ?? []).map((guest) => guest.email.toLowerCase()))];
+  const { error } = await admin.from("project_guests").delete().eq("project_id", projectId);
+  if (error) return { ok: false, message: ko.common.error };
+
+  // 다른 진행 중 프로젝트에도 등록된 이메일은 Auth 사용자를 남긴다
+  const { data: elsewhere } = emails.length
+    ? await admin
+        .from("project_guests")
+        .select("email, projects!inner(status)")
+        .in("email", emails)
+        .neq("projects.status", "closed")
+    : { data: [] as { email: string }[] };
+  const keep = new Set((elsewhere ?? []).map((row) => row.email.toLowerCase()));
+
+  let deletedUsers = 0;
+  const kept = emails.filter((email) => keep.has(email));
+  const toDelete = emails.filter((email) => !keep.has(email));
+  if (toDelete.length > 0) {
+    const { data: userList } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+    for (const email of toDelete) {
+      const user = userList?.users.find((item) => item.email?.toLowerCase() === email);
+      if (!user) continue;
+      const { error: deleteError } = await admin.auth.admin.deleteUser(user.id);
+      if (!deleteError) deletedUsers += 1;
+    }
+  }
+  revalidateProject(code);
+  return { ok: true, removedGuests: guests?.length ?? 0, deletedUsers, keptUsers: kept };
 }

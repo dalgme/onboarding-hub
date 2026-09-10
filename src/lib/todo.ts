@@ -1,5 +1,7 @@
 import { differenceInCalendarDays } from "date-fns";
-import { CONNECT_META } from "@/lib/steps";
+import { CONNECT_META, SIMPLE_CONNECT_META } from "@/lib/steps";
+import { ownerOf, isVerifyCode } from "@/lib/verify/types";
+import { differenceInHours } from "date-fns";
 import { ko } from "@/content/ko";
 import type {
   CommentRow,
@@ -25,7 +27,7 @@ export interface TodoItem {
 export type StepLite = Pick<
   StepRow,
   "key" | "status" | "owner_side" | "verify_result" | "blocked_reason" | "title" | "order_index"
->;
+> & Partial<Pick<StepRow, "checked_at" | "updated_at">>;
 export type CommentLite = Pick<CommentRow, "author_side" | "read_at" | "deleted_at">;
 export type GuestLite = Pick<ProjectGuestRow, "last_seen_at">;
 export type ProjectLite = Pick<
@@ -76,18 +78,35 @@ export function buildTodos(
   if (unread > 0) {
     items.push({ key: "unread", label: copy.unread(unread), tab: "steps", urgent: true });
   }
-  // 자동 확인이 "초대 수락 전"으로 끝난 단계 — 다음 행동은 의뢰인이 아니라 나다
+  // 완료 요청이 끝나지 않은 단계 — 원인 코드가 「누가 다음에 움직이는가」를 말한다
+  let clientRetries = 0;
   for (const step of steps) {
     if (step.status !== "client_done") continue;
-    const code = step.verify_result?.code;
-    if (code !== "pending_accept" && code !== "check_invite") continue;
-    const service = CONNECT_META[step.key]?.serviceName ?? step.title;
-    items.push({
-      key: `invite-${step.key}`,
-      label: code === "pending_accept" ? copy.pendingAccept(service) : copy.checkInvite(service),
-      tab: "steps",
-      urgent: true,
-    });
+    const result = step.verify_result;
+    const code = result?.code;
+    const service = CONNECT_META[step.key]?.serviceName ?? SIMPLE_CONNECT_META[step.key]?.serviceName ?? step.title;
+    clientRetries = Math.max(clientRetries, result?.client_attempts ?? 0);
+    if (code === "pending_accept") {
+      items.push({ key: `invite-${step.key}`, label: copy.pendingAccept(service), tab: "steps", urgent: true });
+    } else if (code === "await_admin_first" || code === "await_admin_ack") {
+      if (result?.admin_first_ack === "not_came") continue; // 의뢰인 차례 — 카톡 문구가 나갔다
+      const hours = differenceInHours(now, new Date(result?.first_failed_at ?? step.checked_at ?? now));
+      items.push({ key: `invite-${step.key}`, label: copy.awaitAdmin(service, hours), tab: "steps", urgent: true });
+    } else if (ownerOf(result) === "client" && isVerifyCode(code)) {
+      items.push({ key: `client-${step.key}`, label: copy.clientCause(service, ko.admin.verifyCode[code]), tab: "steps", urgent: false });
+    } else if (ownerOf(result) === "system" && (result?.auto_checks ?? 0) >= 3) {
+      items.push({ key: `system-${step.key}`, label: copy.systemStuck(service), tab: "steps", urgent: false });
+    }
+  }
+  // slug 는 저장했는데 이틀째 완료 요청이 없다 — 조용히 붙잡고 있는 의뢰인
+  for (const step of steps) {
+    if (step.status !== "doing" || !CONNECT_META[step.key] || !step.updated_at) continue;
+    if (differenceInHours(now, new Date(step.updated_at)) >= 48) {
+      items.push({ key: `stale-${step.key}`, label: copy.slugStale(step.title), tab: "steps", urgent: false });
+    }
+  }
+  if (clientRetries >= 3 || needHelp >= 2) {
+    items.push({ key: "suggestAssisted", label: copy.suggestAssisted, tab: "settings", urgent: false });
   }
   if (clientDone > 0) {
     items.push({ key: "verify", label: copy.verify(clientDone), tab: "steps", urgent: false });

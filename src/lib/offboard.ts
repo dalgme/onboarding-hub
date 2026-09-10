@@ -16,7 +16,7 @@ export const OFFBOARD_CHECKLIST: OffboardItem[] = [
     key: "revoke-tokens",
     title: "발급받은 토큰·API 키 폐기",
     detail:
-      "GitHub PAT / Vercel 토큰 / Supabase 액세스 토큰과, 의뢰인 조직에서 내가 발급한 키 중 회수 대상(예: 내 이름으로 만든 테스트 키)을 폐기한다. 멤버 탈퇴보다 반드시 먼저. 서비스가 실제로 쓰는 키(Anthropic API 키 등)는 의뢰인 조직 소유이므로 남긴다.",
+      "이 프로젝트를 위해 별도로 발급한 토큰·키(예: 의뢰인 조직에서 내 이름으로 만든 테스트 키, 프로젝트 전용 배포 토큰)를 폐기한다. 멤버 탈퇴보다 반드시 먼저. 허브 공용 검증 토큰(GITHUB_TOKEN·MY_VERCEL_TOKEN·SUPABASE_ACCESS_TOKEN)은 다른 프로젝트에도 쓰므로 폐기하지 않는다. 서비스가 실제로 쓰는 키(Anthropic API 키 등)는 의뢰인 조직 소유이므로 남긴다.",
   },
   {
     key: "leave-orgs",

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeSlug } from "@/lib/slug";
 import { pushAdmin, minuteOf } from "@/lib/notify";
-import { isAutoVerifyType, runVerification } from "@/lib/verify/run";
+import { isAutoVerifyType, markAwaitAdminAck, runVerification } from "@/lib/verify/run";
 import { ko } from "@/content/ko";
 import { CONNECT_META } from "@/lib/steps";
 
@@ -86,6 +86,8 @@ export async function updateStepStatus(
         revalidatePath(`/p/${code}`, "layout");
         return { ok: true };
       }
+      // 메일함으로 초대가 오는 단계는 「내가 확인할 차례」로 표시한다
+      if (status === "client_done") await markAwaitAdminAck(stepId).catch(() => null);
       const message =
         status === "client_done"
           ? ko.push.clientDone(info.project, info.step)
@@ -137,6 +139,14 @@ export async function saveOrgSlug(
     .eq("id", projectId);
 
   if (error) return { ok: false, message: ko.common.error };
+
+  // 주소를 저장했다 = 진행 중이다. todo 에 머물러 있으면 doing 으로 올린다 (의뢰인 허용 전이)
+  await supabase
+    .from("steps")
+    .update({ status: "doing" })
+    .eq("project_id", projectId)
+    .eq("key", stepKey)
+    .eq("status", "todo");
 
   // 「완료했습니다」를 먼저 누르고 주소를 나중에 넣은 경우 — 백오프를 기다리지 않고 바로 다시 확인한다.
   // (안 그러면 「주소 부탁」 문구가 최대 24시간 남는다)
@@ -298,5 +308,23 @@ export async function requestScreenShareHelp(
       }),
     );
   }
+  return { ok: true };
+}
+
+
+const startSchema = z.object({ stepId: z.uuid(), code: z.string().min(1) });
+
+// 「만들었습니다 — 다음 단계로」: 화면 상태만 바꾸면 서버는 의뢰인이 시작했는지 모른다.
+// todo 인 단계만 doing 으로 올린다. 실패해도 화면 진행은 막지 않는다
+export async function startStep(input: z.infer<typeof startSchema>): Promise<ActionResult> {
+  const parsed = startSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: ko.common.error };
+  const supabase = await createClient();
+  await supabase
+    .from("steps")
+    .update({ status: "doing" })
+    .eq("id", parsed.data.stepId)
+    .eq("status", "todo");
+  revalidatePath(`/p/${parsed.data.code}`, "layout");
   return { ok: true };
 }

@@ -12,6 +12,7 @@ import { VerifyBadge } from "@/components/onboarding/verify-badge";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
 import { CONNECT_META } from "@/lib/steps";
+import { startStep } from "@/app/(guest)/p/[code]/actions";
 import type { StepRow, VerifyResult } from "@/lib/database.types";
 
 type Stage = "create" | "slug" | "invite" | "verify";
@@ -63,22 +64,14 @@ export function ConnectFlow({
           body: JSON.stringify({ stepId: step.id }),
         });
         if (!response.ok) {
-          setLastResult({
-            status: "error",
-            checked_at: new Date().toISOString(),
-            detail: ko.common.error,
-          });
+          setLastResult({ status: "error", code: "network", checked_at: new Date().toISOString() });
           return;
         }
         const data = (await response.json()) as { result: VerifyResult };
         setLastResult(data.result);
         router.refresh();
       } catch {
-        setLastResult({
-          status: "error",
-          checked_at: new Date().toISOString(),
-          detail: ko.common.error,
-        });
+        setLastResult({ status: "error", code: "network", checked_at: new Date().toISOString() });
       }
     });
   }
@@ -150,7 +143,11 @@ export function ConnectFlow({
             type="button"
             variant="outline"
             size="lg"
-            onClick={() => setStage("slug")}
+            onClick={() => {
+              setStage("slug");
+              // 서버에도 「시작했다」를 남긴다 — 이틀째 초대 전 신호의 기준점
+              if (step.status === "todo") void startStep({ stepId: step.id, code: projectCode });
+            }}
           >
             {ko.stepDetail.createDone}
           </Button>
@@ -228,15 +225,12 @@ export function ConnectFlow({
               <CheckCircle2 className="size-5 text-primary" />
               <VerifyBadge result={lastResult} side="client" />
             </div>
-            {lastResult?.status === "not_found" ? (
+            {lastResult && lastResult.status !== "verified" ? (
               <p className="text-sm leading-relaxed text-muted-foreground">
-                {lastResult.detail ? `${lastResult.detail}. ` : ""}
-                {ko.stepDetail.verifyNotFoundHint}
-              </p>
-            ) : null}
-            {lastResult?.status === "error" ? (
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {ko.stepDetail.verifyErrorHint}
+                {(lastResult.code && ko.stepDetail.verifyCode[lastResult.code]) ??
+                  (lastResult.status === "error"
+                    ? ko.stepDetail.verifyErrorHint
+                    : ko.stepDetail.verifyNotFoundHint)}
               </p>
             ) : null}
             <Button

@@ -1,5 +1,6 @@
 import webpush from "web-push";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { redact } from "@/lib/redact";
 
 // 관리자 휴대폰으로 웹 푸시. 메일·외부 서비스 없이 PWA만으로 간다.
 // 어떤 경우에도 throw 하지 않는다 — 알림이 실패해도 의뢰인의 행동은 저장돼야 한다.
@@ -81,21 +82,17 @@ export async function notifyAdmin(payload: PushPayload): Promise<PushSendResult>
             // 400/401/403은 내 VAPID 설정 문제(키 짝·subject)다. 의뢰인 문제가 아니다
             console.error("[push] 전송 실패", {
               status: cause.statusCode,
-              body: cause.body.slice(0, 300),
+              body: redact(cause.body),
               configError: [400, 401, 403].includes(cause.statusCode),
             });
             return;
           }
-          console.error("[push] 전송 실패", {
-            message: cause instanceof Error ? cause.message : String(cause),
-          });
+          console.error("[push] 전송 실패", { message: redact(cause) });
         }
       }),
     );
   } catch (cause) {
-    console.error("[push] 알림 처리 실패", {
-      message: cause instanceof Error ? cause.message : String(cause),
-    });
+    console.error("[push] 알림 처리 실패", { message: redact(cause) });
   }
   return result;
 }

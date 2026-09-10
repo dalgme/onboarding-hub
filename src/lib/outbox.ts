@@ -1,7 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { pushAdmin, dayKst, minuteOf } from "@/lib/notify";
-import { CONNECT_META } from "@/lib/steps";
+import { CONNECT_META, SIMPLE_CONNECT_META } from "@/lib/steps";
 import { ko } from "@/content/ko";
+import { redact } from "@/lib/redact";
 import type { NoticeKind, NoticeRow, StepStatus, VerifyResult } from "@/lib/database.types";
 
 // 「보낼 카톡」 — 의뢰인에게 전할 말을 시스템이 완성 문구로 써서 장부(notices,
@@ -98,7 +99,7 @@ export async function createOutbox(input: OutboxCreate): Promise<"created" | "du
     if (error) {
       // 23505 = 일일 상한 부분 유니크 인덱스(reminder·escalation) 충돌 — 오늘 몫은 이미 만들었다
       if (error.code === "23505") return "duplicate";
-      console.error("[outbox] 문구 기록 실패", { key: input.dedupeKey, message: error.message });
+      console.error("[outbox] 문구 기록 실패", { key: input.dedupeKey, message: redact(error.message) });
       return "failed";
     }
     if (!data || data.length === 0) return "duplicate";
@@ -114,10 +115,7 @@ export async function createOutbox(input: OutboxCreate): Promise<"created" | "du
     }
     return "created";
   } catch (cause) {
-    console.error("[outbox] 처리 실패", {
-      key: input.dedupeKey,
-      message: cause instanceof Error ? cause.message : String(cause),
-    });
+    console.error("[outbox] 처리 실패", { key: input.dedupeKey, message: redact(cause) });
     return "failed";
   }
 }
@@ -450,4 +448,30 @@ export async function sweepOutbox(
     }
   }
   return report;
+}
+
+// 내가 「초대 안 왔음」을 눌렀다 → 의뢰인에게 초대 확인을 부탁하는 문구. Vercel·Supabase·수동 단계 공통
+export async function onAdminNotCame(step: StepInfo, slug: string | null, adminEmail: string, now: Date): Promise<void> {
+  const meta = CONNECT_META[step.key];
+  const simple = SIMPLE_CONNECT_META[step.key];
+  const serviceName = meta?.serviceName ?? simple?.serviceName ?? step.title;
+  const roleName = meta?.roleName ?? simple?.roleName ?? "";
+  const inviteUrl = meta ? (slug ? meta.inviteUrl(slug) : meta.createUrl) : (simple?.inviteUrl ?? "");
+  await createOutbox({
+    kind: "rerequest",
+    projectId: step.projectId,
+    stepId: step.id,
+    dedupeKey: `rerequest:${step.id}:not_came:${minuteOf(now)}`,
+    title: ko.outbox.titles.rerequestCheckInvite(serviceName),
+    body: ko.outbox.rerequestCheckInvite({
+      client: step.clientName,
+      serviceName,
+      stepTitle: step.title,
+      inviteUrl,
+      email: adminEmail,
+      roleName,
+    }),
+    detail: "check_invite",
+    push: null,
+  });
 }
