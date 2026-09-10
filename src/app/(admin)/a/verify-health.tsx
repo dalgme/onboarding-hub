@@ -18,6 +18,7 @@ const STATUS_VARIANT: Record<TokenStatus, "success" | "destructive" | "warning">
     ok: "success",
     missing: "destructive",
     invalid: "destructive",
+    mismatch: "destructive",
     error: "warning",
   };
 

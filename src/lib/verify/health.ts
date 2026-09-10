@@ -5,8 +5,13 @@
 // 확인 버튼을 눌렀고, 의뢰인 화면에 빨간 「확인 오류」가 떴다.
 // 내 설정 누락이 의뢰인에게 오류로 보였다.
 
+import { createAdminClient } from "@/lib/supabase/admin";
+
 export type TokenKey = "github" | "vercel" | "supabase";
-export type TokenStatus = "ok" | "missing" | "invalid" | "error";
+// mismatch: 토큰은 멀쩡한데 그 계정의 이메일이 허브 관리자 이메일과 다르다.
+// 의뢰인은 허브가 보여주는 이메일로 초대하므로, 다르면 초대를 수락할 수 없다.
+// (실제 사고: 허브는 한메일, 계정들은 gmail — 초대 4건이 전부 헛돌았다)
+export type TokenStatus = "ok" | "missing" | "invalid" | "mismatch" | "error";
 
 export interface TokenHealth {
   key: TokenKey;
@@ -14,6 +19,9 @@ export interface TokenHealth {
   status: TokenStatus;
   detail?: string;
 }
+
+// judge가 돌려주는 문제. 문자열이면 invalid, 상태를 지정할 수도 있다
+type Problem = string | { status: TokenStatus; detail: string };
 
 const TIMEOUT_MS = 6000;
 
@@ -26,7 +34,7 @@ async function probe(
   envName: string,
   url: string,
   headers: Record<string, string>,
-  judge?: (response: Response) => string | null,
+  judge?: (response: Response) => Promise<Problem | null> | Problem | null,
   preflight?: (token: string) => string | null,
 ): Promise<TokenHealth> {
   const token = process.env[envName];
@@ -55,9 +63,12 @@ async function probe(
     if (!response.ok) {
       return { key, envName, status: "error", detail: `HTTP ${response.status}` };
     }
-    const problem = judge?.(response) ?? null;
-    if (problem) {
+    const problem = (await judge?.(response)) ?? null;
+    if (typeof problem === "string") {
       return { key, envName, status: "invalid", detail: problem };
+    }
+    if (problem) {
+      return { key, envName, ...problem };
     }
     return { key, envName, status: "ok" };
   } catch (cause) {
@@ -66,7 +77,24 @@ async function probe(
   }
 }
 
+async function adminEmail(): Promise<string | null> {
+  const { data } = await createAdminClient()
+    .from("admins")
+    .select("email")
+    .limit(1)
+    .maybeSingle();
+  return data?.email?.toLowerCase() ?? null;
+}
+
+function mismatch(service: string, accountEmail: string, hubEmail: string): Problem {
+  return {
+    status: "mismatch",
+    detail: `${service} 계정 이메일(${accountEmail})이 허브 관리자 이메일(${hubEmail})과 다르다 — 의뢰인이 허브가 보여주는 이메일로 초대하면 이 계정으로는 수락할 수 없다. 둘 중 하나로 통일한다`,
+  };
+}
+
 export async function checkVerifyTokens(): Promise<TokenHealth[]> {
+  const hubEmail = await adminEmail();
   return Promise.all([
     probe(
       "github",
@@ -96,7 +124,21 @@ export async function checkVerifyTokens(): Promise<TokenHealth[]> {
           ? "fine-grained 토큰이다 — 의뢰인 조직을 조회할 수 없다. Tokens (classic) + read:org 로 다시 만든다"
           : null,
     ),
-    probe("vercel", "MY_VERCEL_TOKEN", "https://api.vercel.com/v2/user", {}),
+    probe(
+      "vercel",
+      "MY_VERCEL_TOKEN",
+      "https://api.vercel.com/v2/user",
+      {},
+      // 토큰 주인의 이메일을 허브 관리자 이메일과 대조한다.
+      // 여기가 다르면 의뢰인이 아무리 초대해도 「Wrong account」만 뜬다
+      async (response) => {
+        if (!hubEmail) return null;
+        const body = (await response.json()) as { user?: { email?: string } };
+        const email = body.user?.email?.toLowerCase();
+        if (!email || email === hubEmail) return null;
+        return mismatch("Vercel", email, hubEmail);
+      },
+    ),
     probe(
       "supabase",
       "SUPABASE_ACCESS_TOKEN",
