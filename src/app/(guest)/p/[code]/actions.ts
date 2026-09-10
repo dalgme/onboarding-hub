@@ -1,11 +1,28 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeSlug } from "@/lib/slug";
+import { notifyAdmin } from "@/lib/push";
 import { ko } from "@/content/ko";
 import { CONNECT_META } from "@/lib/steps";
+
+type StepWithProject = { title: string; projects: { name: string; code: string } | null };
+
+// 알림 문구에 쓸 단계 제목·프로젝트 이름. 의뢰인 세션(RLS)으로 읽는다
+async function describeStep(stepId: string): Promise<{ step: string; project: string; code: string } | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("steps")
+    .select("title, projects(name, code)")
+    .eq("id", stepId)
+    .maybeSingle();
+  const row = data as unknown as StepWithProject | null;
+  if (!row?.projects) return null;
+  return { step: row.title, project: row.projects.name, code: row.projects.code };
+}
 
 export interface ActionResult {
   ok: boolean;
@@ -44,6 +61,20 @@ export async function updateStepStatus(
 
   if (error) return { ok: false, message: ko.common.error };
   revalidatePath(`/p/${code}`, "layout");
+
+  // 의뢰인이 한 일을 내 폰으로. 실패해도 위 저장은 이미 끝났다
+  if (status === "client_done" || status === "blocked") {
+    const info = await describeStep(stepId);
+    if (info) {
+      const message =
+        status === "client_done"
+          ? ko.push.clientDone(info.project, info.step)
+          : ko.push.blocked(info.project, info.step, blockedReason ?? "");
+      after(() =>
+        notifyAdmin({ ...message, url: `/a/${info.code}?tab=steps`, tag: `step-${stepId}` }),
+      );
+    }
+  }
   return { ok: true };
 }
 
@@ -110,6 +141,21 @@ export async function addGuestComment(
 
   if (error) return { ok: false, message: ko.common.error };
   revalidatePath(`/p/${code}`, "layout");
+
+  const { data: project } = await supabase
+    .from("projects")
+    .select("name")
+    .eq("id", projectId)
+    .maybeSingle();
+  if (project) {
+    const preview = body.length > 80 ? `${body.slice(0, 80)}…` : body;
+    after(() =>
+      notifyAdmin({
+        ...ko.push.comment(project.name, kind, preview),
+        url: `/a/${code}?tab=steps`,
+      }),
+    );
+  }
   return { ok: true };
 }
 
@@ -190,5 +236,16 @@ export async function requestScreenShareHelp(
   if (commentError) return { ok: false, message: ko.common.error };
 
   revalidatePath(`/p/${code}`, "layout");
+
+  const info = await describeStep(stepId);
+  if (info) {
+    after(() =>
+      notifyAdmin({
+        ...ko.push.needHelp(info.project, info.step),
+        url: `/a/${info.code}?tab=steps`,
+        tag: `step-${stepId}`,
+      }),
+    );
+  }
   return { ok: true };
 }

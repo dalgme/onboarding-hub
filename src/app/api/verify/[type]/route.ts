@@ -1,5 +1,7 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest, after } from "next/server";
 import { z } from "zod";
+import { notifyAdmin } from "@/lib/push";
+import { ko } from "@/content/ko";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyGithubMembership } from "@/lib/verify/github";
@@ -46,7 +48,7 @@ export async function POST(
   const { data: step } = await supabase
     .from("steps")
     .select(
-      "id, verify_type, project_id, projects(status, github_org, vercel_team, supabase_org)",
+      "id, title, verify_type, project_id, projects(code, name, status, github_org, vercel_team, supabase_org)",
     )
     .eq("id", bodyParsed.data.stepId)
     .maybeSingle();
@@ -59,6 +61,8 @@ export async function POST(
   }
 
   const project = step.projects as unknown as {
+    code: string;
+    name: string;
     status: string;
     github_org: string | null;
     vercel_team: string | null;
@@ -95,6 +99,12 @@ export async function POST(
       stepId: step.id,
       detail: result.detail ?? null,
     });
+    if (project) {
+      const message = ko.push.verifyError(project.name, step.title, result.detail ?? "");
+      after(() =>
+        notifyAdmin({ ...message, url: `/a/${project.code}?tab=steps`, tag: `verify-${step.id}` }),
+      );
+    }
   }
 
   const admin = createAdminClient();

@@ -200,6 +200,10 @@ export const ko = {
     doneSent: "확인 요청이 전달되었습니다. 제가 실제 연결 상태를 확인합니다.",
     blockedBanner: (reason: string) => `막힌 상태입니다 — ${reason}`,
     resume: "다시 진행하기",
+    doneChecklistTitle: "완료 전에 확인해 주세요",
+    doneChecklistHelp:
+      "아래를 모두 확인하셨으면 완료를 눌러 주세요. 하나라도 안 됐으면 「막혔어요」로 알려 주시면 됩니다.",
+    doneChecklistSubmit: "모두 확인했습니다 — 완료",
   },
 
   assist: {
@@ -257,6 +261,30 @@ export const ko = {
     mine: "나",
   },
 
+  // 관리자 휴대폰 알림 문구 (서버에서 만든다)
+  push: {
+    clientDone: (project: string, step: string) => ({
+      title: `${project} · 완료 요청`,
+      body: `의뢰인이 「${step}」을(를) 완료했다고 합니다. 실제 연결을 확인해 주세요.`,
+    }),
+    blocked: (project: string, step: string, reason: string) => ({
+      title: `${project} · 막혔어요`,
+      body: `「${step}」 — ${reason}`,
+    }),
+    needHelp: (project: string, step: string) => ({
+      title: `${project} · 화면공유 요청`,
+      body: `의뢰인이 「${step}」에서 화면공유 도움을 요청했습니다.`,
+    }),
+    comment: (project: string, kind: "question" | "request", body: string) => ({
+      title: `${project} · ${kind === "question" ? "새 질문" : "새 요청"}`,
+      body,
+    }),
+    verifyError: (project: string, step: string, detail: string) => ({
+      title: `${project} · 자동 확인 실패`,
+      body: `「${step}」 — ${detail}`,
+    }),
+  },
+
   admin: {
     dashboardTitle: "프로젝트",
     newProject: "새 프로젝트",
@@ -306,6 +334,47 @@ export const ko = {
       issueWarningLink: "대시보드에서 토큰 상태 보기",
       recentErrors: "의뢰인 화면에서 실패한 확인",
       noRecentErrors: "최근 실패한 확인이 없다.",
+    },
+
+    todo: {
+      title: "지금 할 일",
+      dashboardTitle: "지금 할 일 — 의뢰인이 한 일에 내가 대처할 것",
+      none: "지금 처리할 것이 없다.",
+      allClear: "모든 프로젝트에 처리할 것이 없다.",
+      verify: (n: number) => `완료 요청 확인 ${n}건`,
+      blocked: (n: number) => `막힘 ${n}건`,
+      needHelp: (n: number) => `화면공유 요청 ${n}건`,
+      verifyError: (n: number) => `확인 실패 ${n}건`,
+      unread: (n: number) => `안 읽은 질문·요청 ${n}건`,
+      scopeMissing: "범위 미작성",
+      scopeUnconfirmed: "범위 미확정",
+      noGuest: "포털 접근 이메일 없음",
+      notSeen: (days: number) => `의뢰인 ${days}일째 미접속`,
+    },
+    statusCard: {
+      lastSeen: "의뢰인 마지막 접속",
+      neverSeen: "접속 전",
+      lastActivity: "최근 활동",
+      noActivity: "아직 활동 없음",
+      clientNext: "의뢰인 다음 할 일",
+      clientDone: "없음 — 의뢰인 단계 전부 확인 완료",
+      myNext: "내 다음 할 일",
+      waitingClient: (title: string) => `의뢰인의 「${title}」 완료를 기다리는 중`,
+      allDone: "없음",
+      activityClientDone: (title: string) => `「${title}」 완료 요청`,
+      activityVerified: (title: string) => `「${title}」 확인 완료`,
+      activityBlocked: (title: string) => `「${title}」 막힘`,
+      activityQuestion: "질문 남김",
+      activityRequest: "요청 남김",
+    },
+    push: {
+      on: "이 기기로 알림 받는 중",
+      off: "휴대폰 알림 켜기",
+      unsupported: "이 브라우저는 알림을 지원하지 않는다 — 홈 화면에 설치한 앱에서 켠다",
+      notConfigured: "알림 키(VAPID)가 아직 등록되지 않았다",
+      denied: "알림이 차단돼 있다 — 브라우저 설정에서 허용한 뒤 다시 시도",
+      help: "의뢰인이 완료·막힘·질문을 남기거나 자동 확인이 실패하면 이 기기로 알림이 온다.",
+      failed: "알림 설정에 실패했다. 잠시 후 다시 시도해 달라.",
     },
 
     tabProcess: "프로세스",

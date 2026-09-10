@@ -24,6 +24,7 @@ import { ProcessTab } from "@/app/(admin)/a/[code]/process-tab";
 import { OptionalSteps } from "@/app/(admin)/a/[code]/optional-steps";
 import { AccessPanel } from "@/app/(admin)/a/[code]/access-panel";
 import { VerifyTokenWarning } from "@/app/(admin)/a/verify-health";
+import { ProjectStatus } from "@/app/(admin)/a/[code]/project-status";
 
 const TABS = [
   { key: "process", label: ko.admin.tabProcess },
@@ -148,6 +149,13 @@ export default async function AdminProjectPage({
           {format(new Date(project.created_at), "yyyy.MM.dd")} 시작
         </span>
       </div>
+
+      <ProjectStatus
+        project={project}
+        steps={allSteps}
+        comments={comments ?? []}
+        guests={guests ?? []}
+      />
 
       <nav className="flex gap-1 border-b border-border">
         {TABS.map((item) => (

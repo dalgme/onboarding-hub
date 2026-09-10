@@ -37,7 +37,7 @@ Next.js App Router + TypeScript strict / Tailwind + shadcn/ui / Pretendard /
 Supabase **ap-northeast-2 (서울)** / Supabase Auth 이메일+비밀번호 /
 React Hook Form + Zod / react-markdown + rehype-sanitize /
 lucide-react / date-fns / Vercel **함수 리전 icn1(서울)** / pnpm /
-`@anthropic-ai/sdk` (온보딩 도우미 챗봇 전용)
+`@anthropic-ai/sdk` (온보딩 도우미 챗봇 전용) / `web-push` (관리자 휴대폰 알림, VAPID)
 
 > Vercel 기본 리전은 미국 동부다. DB가 서울이므로 `vercel.json`에서
 > `regions: ["icn1"]`을 반드시 유지한다 — 안 그러면 클릭마다 태평양을 왕복한다.
@@ -84,10 +84,11 @@ supabase/migrations/
 
 ---
 
-## 4. 데이터 모델 — 6개 테이블
+## 4. 데이터 모델 — 7개 테이블
 
 ```
 admins(email)                     내 이메일 1건
+push_subscriptions(endpoint)      내 휴대폰 알림 구독 (관리자만, 큐가 아니다)
 projects                          의뢰 사안
  ├─ project_guests(email)         의뢰인 접근 목록
  ├─ steps                         온보딩 단계
@@ -277,6 +278,22 @@ web search(공식 문서 도메인 한정)로 최신 상태를 확인해 답하�
 - `max_tokens`는 답변 길이 손잡이가 아니다. Opus 5는 생각하기가 기본이고
   이 값이 (생각 + 답변)의 상한이라, 조이면 빈 답이 돌아온다
 - 이것은 §12의 「실시간 채팅」이 아니다. 사람 간 소통은 여전히 질문·요청 코멘트 하나뿐
+
+### 제작자 루프 — 의뢰인이 한 일에 제때 대처한다
+
+의뢰인 쪽 흐름만 있고 제작자 쪽 루프가 없으면 「의뢰인용 안내 화면」이지
+관리 도구가 아니다. (실제 사고: 의뢰인이 34분 만에 5단계를 끝내고 질문 3개를
+남겼는데 나는 3시간 동안 몰랐다)
+
+- **알림** — 의뢰인이 「완료했습니다」·「막혔어요」·「화면공유로 도움받기」·
+  질문·요청을 남기거나 자동 확인이 실패하면 내 휴대폰으로 웹 푸시. 메일·외부
+  서비스 없이 PWA만으로. 보내는 자리는 그 행동을 저장하는 서버 액션이고,
+  `after()`로 응답을 막지 않는다. 알림 실패는 절대 저장을 막지 않는다
+- **지금 할 일** — `src/lib/todo.ts`가 기존 데이터에서 계산한다. 완료 요청 확인 ·
+  막힘 · 화면공유 요청 · 확인 실패 · 안 읽은 질문 · 범위 미작성/미확정 · 접근 이메일
+  없음 · 미접속. `/a` 최상단과 `/a/[code]` 「현재 상황」에 칩으로, 누르면 그 탭
+- **수동 단계의 자기확인** — API로 확인할 수 없는 의뢰인 단계(`DONE_CHECKLIST`)는
+  「완료했습니다」 전에 스스로 확인할 항목을 모두 체크해야 넘어간다. 저장하지 않는다
 
 ### 오류 처리 — 의뢰인이 당황하지 않게
 

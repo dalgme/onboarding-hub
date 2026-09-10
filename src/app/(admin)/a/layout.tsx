@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { LogOut } from "lucide-react";
 import { isAdminUser } from "@/lib/auth";
 import { logout } from "@/app/logout-action";
+import { PushToggle } from "@/app/(admin)/a/push-toggle";
 import { ko } from "@/content/ko";
 
 export default async function AdminLayout({
@@ -20,6 +21,7 @@ export default async function AdminLayout({
           {ko.common.appName}
         </Link>
         <nav className="flex items-center gap-4 text-sm">
+          <PushToggle />
           <Link
             href="/cost"
             className="text-muted-foreground hover:text-foreground"

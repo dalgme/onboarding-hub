@@ -14,6 +14,8 @@ import {
   VerifyHealthFallback,
   type RecentVerifyError,
 } from "@/app/(admin)/a/verify-health";
+import { TodoList } from "@/app/(admin)/a/todo-list";
+import { buildTodos, type TodoItem } from "@/lib/todo";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
 import type { ProjectStatus } from "@/lib/database.types";
@@ -42,10 +44,14 @@ export default async function AdminDashboardPage() {
       .from("projects")
       .select("*")
       .order("created_at", { ascending: false }),
-    supabase.from("steps").select("project_id, status, title, verify_result"),
+    supabase
+      .from("steps")
+      .select(
+        "project_id, status, title, owner_side, order_index, verify_result, blocked_reason",
+      ),
     supabase
       .from("comments")
-      .select("project_id")
+      .select("project_id, author_side, read_at, deleted_at")
       .eq("author_side", "client")
       .is("read_at", null)
       .is("deleted_at", null),
@@ -94,11 +100,51 @@ export default async function AdminDashboardPage() {
     })
     .sort((a, b) => b.result.checked_at.localeCompare(a.result.checked_at));
 
+  // 프로젝트별 「지금 할 일」 — 급한 것이 있는 프로젝트가 위로
+  const todoRows: { code: string; name: string; items: TodoItem[] }[] = (projects ?? [])
+    .map((project) => ({
+      code: project.code,
+      name: project.name,
+      items: buildTodos(
+        project,
+        (steps ?? []).filter((step) => step.project_id === project.id),
+        (unreadComments ?? []).filter((comment) => comment.project_id === project.id),
+        (guestRows ?? []).filter((guest) => guest.project_id === project.id),
+      ),
+    }))
+    .filter((row) => row.items.length > 0)
+    .sort(
+      (a, b) =>
+        Number(b.items.some((item) => item.urgent)) -
+          Number(a.items.some((item) => item.urgent)) || b.items.length - a.items.length,
+    );
+
   return (
     <main className="flex flex-col gap-5">
       <Suspense fallback={<VerifyHealthFallback />}>
         <VerifyHealth recentErrors={recentErrors} />
       </Suspense>
+
+      <section className="rounded-lg border border-border bg-card px-4 py-3">
+        <h2 className="text-sm font-semibold">{ko.admin.todo.dashboardTitle}</h2>
+        {todoRows.length === 0 ? (
+          <p className="mt-1 text-sm text-muted-foreground">{ko.admin.todo.allClear}</p>
+        ) : (
+          <ul className="mt-2 flex flex-col gap-2">
+            {todoRows.map((row) => (
+              <li key={row.code} className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+                <Link
+                  href={`/a/${row.code}`}
+                  className="shrink-0 text-sm font-medium text-primary hover:underline"
+                >
+                  {row.name}
+                </Link>
+                <TodoList code={row.code} items={row.items} emptyText={null} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">{ko.admin.dashboardTitle}</h1>

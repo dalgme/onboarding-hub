@@ -9,6 +9,7 @@ import {
   requestScreenShareHelp,
   updateStepStatus,
 } from "@/app/(guest)/p/[code]/actions";
+import { DONE_CHECKLIST } from "@/lib/steps";
 import { ko } from "@/content/ko";
 import type { StepRow } from "@/lib/database.types";
 
@@ -26,6 +27,10 @@ export function StickyActions({
   const [pending, startTransition] = useTransition();
   const [blockedOpen, setBlockedOpen] = useState(false);
   const [blockedReason, setBlockedReason] = useState("");
+  // 자동 확인이 없는 단계는 「완료」 전에 스스로 확인하게 한다 (저장하지 않는다)
+  const [checklistOpen, setChecklistOpen] = useState(false);
+  const [checked, setChecked] = useState<ReadonlySet<number>>(new Set());
+  const checklist = DONE_CHECKLIST[step.key] ?? null;
   const [notice, setNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -43,12 +48,26 @@ export function StickyActions({
       }
       setNotice(doneMessage);
       setBlockedOpen(false);
+      setChecklistOpen(false);
       setBlockedReason("");
       router.refresh();
     });
   }
 
   const isBlocked = step.status === "blocked";
+  const allChecked = checklist ? checked.size === checklist.length : true;
+
+  function submitDone() {
+    run(
+      () =>
+        updateStepStatus({
+          stepId: step.id,
+          code: projectCode,
+          status: "client_done",
+        }),
+      ko.stepDetail.doneSent,
+    );
+  }
 
   return (
     <div className="sticky bottom-0 -mx-5 border-t border-border bg-background/95 px-5 py-3 backdrop-blur">
@@ -91,6 +110,53 @@ export function StickyActions({
             >
               {ko.stepDetail.resume}
             </Button>
+          </div>
+        ) : checklistOpen && checklist ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-sm font-medium">{ko.stepDetail.doneChecklistTitle}</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {ko.stepDetail.doneChecklistHelp}
+            </p>
+            <ul className="flex flex-col gap-1">
+              {checklist.map((item, index) => (
+                <li key={item}>
+                  <label className="flex min-h-11 cursor-pointer items-start gap-2 rounded-md px-1 py-2 text-sm leading-relaxed hover:bg-accent">
+                    <input
+                      type="checkbox"
+                      className="mt-1 size-4 shrink-0 accent-primary"
+                      checked={checked.has(index)}
+                      onChange={(event) => {
+                        const next = new Set(checked);
+                        if (event.target.checked) next.add(index);
+                        else next.delete(index);
+                        setChecked(next);
+                      }}
+                    />
+                    <span>{item}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="success"
+                className="flex-1"
+                disabled={pending || !allChecked}
+                onClick={submitDone}
+              >
+                <ThumbsUp className="size-4" />
+                {ko.stepDetail.doneChecklistSubmit}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={pending}
+                onClick={() => setChecklistOpen(false)}
+              >
+                {ko.common.cancel}
+              </Button>
+            </div>
           </div>
         ) : blockedOpen ? (
           <div className="flex flex-col gap-2">
@@ -144,17 +210,7 @@ export function StickyActions({
               variant="success"
               className="flex-1"
               disabled={pending}
-              onClick={() =>
-                run(
-                  () =>
-                    updateStepStatus({
-                      stepId: step.id,
-                      code: projectCode,
-                      status: "client_done",
-                    }),
-                  ko.stepDetail.doneSent,
-                )
-              }
+              onClick={() => (checklist ? setChecklistOpen(true) : submitDone())}
             >
               <ThumbsUp className="size-4" />
               {ko.stepDetail.doneButton}

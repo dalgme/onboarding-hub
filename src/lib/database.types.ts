@@ -85,6 +85,16 @@ export type LinkRow = {
   updated_at: string;
 }
 
+export type PushSubscriptionRow = {
+  id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  user_agent: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type CommentRow = {
   id: string;
   project_id: string;
@@ -109,6 +119,11 @@ export type Database = {
   public: {
     Tables: {
       admins: TableDef<AdminRow, { email: string }, Partial<AdminRow>>;
+      push_subscriptions: TableDef<
+        PushSubscriptionRow,
+        { endpoint: string; p256dh: string; auth: string; user_agent?: string | null },
+        Partial<PushSubscriptionRow>
+      >;
       projects: TableDef<
         ProjectRow,
         {
