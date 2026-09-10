@@ -61,6 +61,9 @@ export async function pushAdmin(input: AdminPushInput): Promise<PushOutcome> {
       )
       .select("id");
     if (error) {
+      // 23505 = 일일 상한 부분 유니크 인덱스 충돌(dedupe_key 충돌은 ignoreDuplicates 가 흡수한다)
+      // — 「오늘은 이미 알렸다」이므로 조용히 끝낸다
+      if (error.code === "23505") return "duplicate";
       console.error("[notify] 장부 기록 실패", { key: input.dedupeKey, message: error.message });
       // 장부가 안 되면 알림을 포기하지는 않는다 — 알림이 장부보다 중요하다
       const fallback = await notifyAdmin({ title: input.title, body: input.body, url: input.url, key: input.dedupeKey });

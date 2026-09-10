@@ -44,6 +44,7 @@ export type OutboxItem = NoticeRow & {
 const RERQUEST_AFTER_MS = 2 * 60 * 60_000; // GitHub check_invite 가 2시간 지속되면 재요청 문구
 const STALE_AFTER_MS = 4 * 60 * 60_000;
 const RECENT_WINDOW_MS = 24 * 60 * 60_000;
+const ONLINE_WINDOW_MS = 15 * 60_000; // 이 안에 포털을 봤으면 「지금 보고 있다」로 친다
 const QUIET_START_KST = 21; // 적체 알림은 09~21시 KST 에만
 const QUIET_END_KST = 9;
 
@@ -92,6 +93,8 @@ export async function createOutbox(input: OutboxCreate): Promise<"created" | "du
       )
       .select("id");
     if (error) {
+      // 23505 = 일일 상한 부분 유니크 인덱스(reminder·escalation) 충돌 — 오늘 몫은 이미 만들었다
+      if (error.code === "23505") return "duplicate";
       console.error("[outbox] 문구 기록 실패", { key: input.dedupeKey, message: error.message });
       return "failed";
     }
@@ -143,14 +146,21 @@ function nextClientAfter(steps: StepLite[], current: StepLite | undefined): Step
 // 연결이 확인됐다 → 「확인됐습니다 + 다음은 …」 문구. 푸시는 검증 쪽에서 이미 나갔다
 export async function onStepVerified(step: StepInfo, verifiedAt: string): Promise<void> {
   const admin = createAdminClient();
-  const [{ data: project }, { data: steps }] = await Promise.all([
+  const [{ data: project }, { data: steps }, { data: guests }] = await Promise.all([
     admin.from("projects").select("status").eq("id", step.projectId).maybeSingle(),
     admin
       .from("steps")
       .select("id, key, title, status, owner_side, order_index")
       .eq("project_id", step.projectId),
+    admin.from("project_guests").select("last_seen_at").eq("project_id", step.projectId),
   ]);
   if (!project || project.status === "closed") return;
+  // 의뢰인이 지금 포털에 있다(방금 「완료했습니다」를 눌렀다) — 포털이 이미 「확인됐습니다·다음」을
+  // 보여준다. 카드를 만들었다가 다음 tick 에 거두는 사이 내가 보내는 일을 만들지 않는다
+  const recentlySeen = (guests ?? []).some(
+    (guest) => guest.last_seen_at && Date.now() - new Date(guest.last_seen_at).getTime() < ONLINE_WINDOW_MS,
+  );
+  if (recentlySeen) return;
   const all = (steps ?? []) as StepLite[];
   const next = nextClientAfter(all, all.find((row) => row.id === step.id));
   await createOutbox({

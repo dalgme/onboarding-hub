@@ -252,6 +252,7 @@ type VerifyResult = {
 - **재시도 모델은 하나 — 「재계산」**: 실패·거둔 행은 장부이지 재시도 대상이 아니다. 다음 tick이 상태에서 "만들어야 할 것"을 다시 계산해 **새 dedupe_key**(에폭·회차 포함)로 다시 만든다. `next_attempt_at`·`attempts`·재시도 인덱스는 두지 않는다
 - dedupe_key 규칙 — **시간 성분(에폭)을 반드시 넣는다**: 오류·전이 계열 `verify:{step_id}:{이전 code}->{새 code}:{first_failed_at ISO 분}` · 토큰 `token_red:{env}:{전환 시각 ISO 분}` · 재요청 `rerequest:{step_id}:{code}:{n}` · 리마인드 `reminder:{project_id}:{step_key}:{access_sent_at ISO 분}:{n}` · 다음 안내 `next_step:{step_id}:{verified_at ISO 분}` · 답글 `admin_replied:{comment_id}` · 접속 안내 `credentials:{project_id}:{issued_at ISO 분}` · 다이제스트 `todo_digest:{project_id}:{yyyy-mm-dd KST}` · 적체 `outbox_stale:{yyyy-mm-dd KST}`
 - `body`(outbox만): 카톡 문구 전문. **비밀번호·매직링크 토큰·API 토큰은 절대 넣지 않는다** — credentials 행의 body는 비밀번호 자리를 「(발급 화면에 표시)」로 두고, 전문은 발급 응답에만 존재한다. CI grep 대상(§11-21)
+- **일일 상한 인덱스와 `on conflict (dedupe_key) do nothing` 은 별개다**(심사 #35): 부분 유니크 인덱스 `(project_id, kind, day_kst)` 충돌은 23505 로 올라온다 — `pushAdmin`·`createOutbox` 는 23505 를 「오늘 몫은 이미 만들었다」(duplicate) 로 조용히 처리한다. 상한 초과를 `skipped(cap)` 행으로 남기고 싶으면 삽입 전에 오늘 건수를 세어 넣는다(Phase 2 reminder)
 - 정리: `kind in ('digest','push_test','verify_event','token_event','preflight')`만 90일. `reminder`·`rerequest`·`credentials`·`next_step`·`admin_replied`·`escalation`은 프로젝트 `closed` 후 cascade로만 지운다(90일 정리가 상한 카운트를 리셋하는 것을 막는다). 「같은 사유로 하루 2건 금지」(§11-14)는 `(project_id, kind, day_kst)` 부분 유니크 인덱스로 별도 강제
 - 웹 푸시는 `topic`(dedupe_key 해시 32자) + TTL. 근거(확인): github.com/web-push-libs/web-push README
 - `detail`은 redact 경유. 토큰·비밀번호·매직링크·이메일 전체는 넣지 않는다
@@ -625,7 +626,7 @@ alter table public.steps add constraint steps_status_check
 | 리마인드 폭주·중복 발송 | 에폭 있는 dedupe_key + 종류별 상한 + 일일 상한 부분 유니크 인덱스. tick은 멱등 |
 | 검증 동시 실행으로 중복 푸시 | CAS 저장 + 전이 기반 dedupe + `/api/verify` 쿨다운 + tick 어드바이저리 락 |
 | 내 지연으로 의뢰인을 재촉 | Vercel·Supabase는 owner=admin 시작. 정지 조건 (e). 자동 재확인은 막힘 판정에 넣지 않는다 |
-| 잘못된 원인 분류로 엉뚱한 재요청 | owner=client 즉시 되돌림은 GitHub 확정 코드 3개 + GitHub check_invite 48h 유예. wrong_role은 role 집합 확정 후 |
+| 잘못된 원인 분류로 엉뚱한 재요청 | owner=client 즉시 되돌림은 GitHub 확정 코드 3개 + GitHub check_invite 48h 유예. wrong_role 문구는 즉시 작성하되(D7=A) 허용 role 집합 확정 전까지 끝에 「제가 역할을 한 번 더 확인하겠습니다」— 보내는 사람이 관리자라 오분류의 마지막 방어선은 카드 위의 사람이다 |
 | 첫 접촉 실패 | 접속 정보는 카톡 하나(발송 채널 없음)·비밀번호 로그인 1순위. 링크는 프래그먼트 랜딩 + 유효시간 P11 대조. 실패 문구가 비밀번호 로그인으로 안내 |
 | 관리자가 「보낼 카톡」을 안 본다 | 생성 즉시 푸시 + 4시간 적체 푸시 + 09:00 요약 건수 + P6 노랑. 포털 카드가 미러라 카톡이 늦어도 의뢰인 화면은 정확하다 |
 | 카톡 답이 포털에 안 남는다 | §3 #18 수동 「옮겨 적기」 + 24h 미답 질문 재푸시. 자동 수집 없음(N4) |
@@ -709,6 +710,8 @@ DNS 자동 검증 · 두 번째 크론 · 두 번째 jsonb 컬럼 · 공용 PAT�
 | 32 | (3판 심사·UX) /a 4층 적층 · P6 칩 자기참조 | **반영·부분** | P6 칩 삭제(상태 카드 노랑만). 카드는 0건이면 숨김, 최근 처리는 접힘. 4층 자체는 유지 — 「보낼 카톡」이 최상단인 것이 이 화면의 목적이다 |
 | 33 | (3판 심사·UX) 폰에서 복사→앱 전환→붙여넣기 3동작 | **반영** | `navigator.share`(폰) → 공유 창에서 카톡 선택. PC 는 복사 |
 | 34 | (3판 심사·CX) 카톡 마지막 줄 「이 카톡으로 답 주셔도 됩니다」가 포털 「여기에 남겨 주세요」와 충돌 · admin_replied 전문이 8줄 상한과 충돌 · §11 #8 잔재 | **반영** | 고정 마지막 줄 삭제 — 재요청은 「화면공유 20분」, 답글 알림은 「포털에서도 보실 수 있어요」로 끝난다. 길이 상한은 admin_replied(전문)·credentials 를 명시적 예외로 둔다. #8 은 #27 로 대체 |
+| 35 | (3판 심사·데이터) 일일 상한 부분 유니크 인덱스 충돌은 `on conflict (dedupe_key)` 가 흡수하지 않는다 | **반영** | 23505 → duplicate 로 처리(M2). Phase 2 reminder 는 삽입 전 건수 확인 |
+| 36 | (3판 심사·CX) next_step 카드가 「지금 포털에 있는 의뢰인」에게도 만들어져 tick 거둠 전에 보내질 수 있다 | **반영** | 최근 15분 내 접속한 프로젝트에는 next_step 을 만들지 않는다(포털이 이미 보여준다) |
 | 26 | (사용자 결정 09-10) 의뢰인에게 전할 메시지는 개발자 대시보드에 표시하고, 발송은 관리자가 카톡으로 직접 | **반영(3판)** | Gmail SMTP·nodemailer·P6(메일)·D13·D14 삭제, D1=D·D7=A·D8=B 종결, M10을 「보낼 카톡」(`notices.channel='outbox'` + `/a` 카드 + 템플릿 9종)으로 교체, §4-4에 거둠·대체 규칙 신설, Phase 1a에 최소판 포함(템플릿 3종), D17(관리자 본인용 2차 채널) 신설. CLAUDE.md §2·§6의 「메일 발송 없음」은 완화하지 않고 유지한다 |
 
 총평 중 별도 지적: 「공휴일 미고려」는 확인 필요 10-9로 유지(토·일 제외 시작). 「Gmail 일일 한도 수치」는 3판에서 메일 채널과 함께 사라졌다(확인 필요 10-4는 카톡 미리보기 항목으로 교체).
