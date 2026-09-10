@@ -1,32 +1,48 @@
 "use client";
 
 import { useState } from "react";
-import { KeyRound, Link2 } from "lucide-react";
+import { format } from "date-fns";
+import { KeyRound, Link2, MessageSquareShare, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CopyButton } from "@/components/common/copy-button";
 import {
   generateGuestMagicLink,
   issueGuestPassword,
+  markAccessSent,
 } from "@/app/(admin)/a/actions";
+import { shareOrCopy } from "@/app/(admin)/a/outbox-list";
 import { ko } from "@/content/ko";
 import type { ProjectGuestRow } from "@/lib/database.types";
+import type { PreflightIssue } from "@/lib/preflight";
 
 // 의뢰인 접속 정보 관리: 비밀번호 발급(주 수단) + 1회용 로그인 링크(보조).
+// 사전 점검 빨강이면 두 버튼 모두 비활성 — 우회 없음.
+// 발급된 안내문은 「카톡으로 보내기」 한 번으로 공유/복사되고 그 순간 「보냈음」이 기록된다.
 export function AccessPanel({
   guests,
   projectId,
   projectCode,
   projectName,
+  linkTtlHours,
+  preflightIssues,
+  accessSentAt,
 }: {
   guests: ProjectGuestRow[];
   projectId: string;
   projectCode: string;
   projectName: string;
+  linkTtlHours: number;
+  preflightIssues: PreflightIssue[];
+  accessSentAt: string | null;
 }) {
   const [busyEmail, setBusyEmail] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, string>>({});
   const [links, setLinks] = useState<Record<string, string>>({});
+  const [sentNote, setSentNote] = useState<Record<string, string>>({});
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const red = preflightIssues.filter((issue) => issue.level === "red");
+  const yellow = preflightIssues.filter((issue) => issue.level === "yellow");
+  const blocked = red.length > 0;
 
   async function issuePassword(email: string) {
     setErrorMessage(null);
@@ -45,9 +61,32 @@ export function AccessPanel({
         password: result.password,
       });
       setMessages((current) => ({ ...current, [email]: message }));
+      setSentNote((current) => ({ ...current, [email]: "" }));
     } finally {
       setBusyEmail(null);
     }
+  }
+
+  async function sendCredentials(email: string) {
+    const message = messages[email];
+    if (!message) return;
+    const outcome = await shareOrCopy(message);
+    if (!outcome) {
+      setSentNote((current) => ({ ...current, [email]: ko.admin.outbox.copyFailed }));
+      return;
+    }
+    const portalUrl = `${window.location.origin}/p/${projectCode}`;
+    const bodyMasked = ko.admin.password.kakaoMessage({
+      projectName,
+      portalUrl,
+      email,
+      password: ko.outbox.credentialsBodyMasked,
+    });
+    const result = await markAccessSent({ projectId, code: projectCode, email, bodyMasked });
+    setSentNote((current) => ({
+      ...current,
+      [email]: result.ok ? ko.admin.password.sentJustNow : (result.message ?? ko.common.error),
+    }));
   }
 
   async function makeLink(email: string) {
@@ -75,6 +114,38 @@ export function AccessPanel({
         {ko.admin.password.help}
       </p>
 
+      {blocked ? (
+        <div
+          role="alert"
+          className="flex flex-col gap-1.5 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm"
+        >
+          <span className="flex items-center gap-2 font-semibold text-destructive">
+            <ShieldAlert className="size-4 shrink-0" />
+            {ko.admin.password.blockedTitle}
+          </span>
+          <ul className="list-disc pl-5 text-foreground/90">
+            {red.map((issue) => (
+              <li key={issue.key}>{issue.message}</li>
+            ))}
+          </ul>
+          <p className="text-xs leading-relaxed text-muted-foreground">{ko.admin.preflight.redHint}</p>
+        </div>
+      ) : null}
+      {yellow.length > 0 ? (
+        <ul className="rounded-lg border border-warning/40 bg-warning/5 px-4 py-2.5 text-sm">
+          {yellow.map((issue) => (
+            <li key={issue.key}>{issue.message}</li>
+          ))}
+          <li className="mt-1 list-none text-xs text-muted-foreground">{ko.admin.preflight.yellowHint}</li>
+        </ul>
+      ) : null}
+
+      <p className="text-xs text-muted-foreground">
+        {accessSentAt
+          ? ko.admin.password.sentRecorded(format(new Date(accessSentAt), "MM.dd HH:mm"))
+          : ko.admin.password.notSentYet}
+      </p>
+
       {errorMessage ? (
         <p className="text-sm text-destructive">{errorMessage}</p>
       ) : null}
@@ -82,13 +153,13 @@ export function AccessPanel({
       <ul className="flex flex-col divide-y divide-border rounded-lg border border-border">
         {guests.map((guest) => (
           <li key={guest.id} className="flex flex-col gap-2 px-4 py-3">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm">{guest.email}</span>
               <div className="flex gap-1.5">
                 <Button
                   type="button"
                   size="sm"
-                  disabled={busyEmail !== null}
+                  disabled={busyEmail !== null || blocked}
                   onClick={() => issuePassword(guest.email)}
                 >
                   {busyEmail === guest.email
@@ -101,9 +172,9 @@ export function AccessPanel({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  disabled={busyEmail !== null}
+                  disabled={busyEmail !== null || blocked}
                   onClick={() => makeLink(guest.email)}
-                  title={ko.admin.magicLink.help}
+                  title={ko.admin.magicLink.help(linkTtlHours)}
                 >
                   <Link2 className="size-4" />
                   {ko.admin.magicLink.title}
@@ -116,15 +187,24 @@ export function AccessPanel({
                 <p className="text-xs font-medium text-success">
                   {ko.admin.password.messageReady(guest.email)}
                 </p>
-                <pre className="whitespace-pre-wrap break-all font-sans text-xs text-muted-foreground">
+                <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed">
                   {messages[guest.email]}
                 </pre>
-                <CopyButton
-                  value={messages[guest.email]}
-                  label={ko.admin.password.copyMessage}
-                  size="sm"
-                  className="self-start"
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" size="sm" onClick={() => sendCredentials(guest.email)}>
+                    <MessageSquareShare className="size-4" />
+                    {ko.admin.password.sendKakao}
+                  </Button>
+                  <CopyButton
+                    value={messages[guest.email]}
+                    label={ko.admin.password.copyMessage}
+                    size="sm"
+                    variant="ghost"
+                  />
+                  {sentNote[guest.email] ? (
+                    <span className="text-xs text-muted-foreground">{sentNote[guest.email]}</span>
+                  ) : null}
+                </div>
               </div>
             ) : null}
 

@@ -1,8 +1,8 @@
 # 온보딩 허브 라이트 — CLAUDE.md
 
 > 지인·소규모 의뢰용 온보딩 관리 도구. 혼자 쓰고, 의뢰인이 손님으로 들어온다.
-> **원칙: 없어도 굴러가는 것은 만들지 않는다.**
-> v0.4 · 2026-08-28 (인증을 매직링크 → 비밀번호로 변경, 메일 의존 제거)
+> **원칙: 없어도 굴러가는 것은 만들지 않는다. 관리자가 손으로 하는 일은 굴러가는 것이 아니다.**
+> v0.5 · 2026-09-10 (시계 = 크론 tick 1개 · 장부 notices · 「보낼 카톡」 · 사전 점검 게이트 · 프래그먼트 로그인 링크)
 
 ---
 
@@ -24,6 +24,14 @@
 
 **1번이 이 도구의 전부다.** 화면·문구·설계 판단이 충돌하면 1번을 우선한다.
 
+### 1인 유지보수 상한
+
+테이블 ≤ 9개 · jsonb 컬럼 1개(`steps.verify_result`) · 크론 라우트 1개(`/api/cron/tick`) ·
+바깥 채널 1개(관리자 웹 푸시) + 외부 heartbeat 1개 · 의뢰인에게 직접 보내는 채널 0개 —
+의뢰인에게 갈 말은 시스템이 카톡 문구로 써서 `/a` 「보낼 카톡」에 두고 관리자가 보낸다.
+모든 자동화는 env가 없으면 「지금 할 일」 칩으로 강등된다. tick은 순수 함수 `runTick(now)`이고
+로컬 `curl`로 재현 가능해야 한다.
+
 ### 하지 않는 것 (다른 채널로 처리)
 
 - **파일 주고받기** — 카톡·메일·드라이브로 한다. Supabase Storage를 쓰지 않는다
@@ -42,9 +50,17 @@ lucide-react / date-fns / Vercel **함수 리전 icn1(서울)** / pnpm /
 > Vercel 기본 리전은 미국 동부다. DB가 서울이므로 `vercel.json`에서
 > `regions: ["icn1"]`을 반드시 유지한다 — 안 그러면 클릭마다 태평양을 왕복한다.
 
-**쓰지 않는 것**: Supabase Storage · 메일 발송(Resend·SMTP 일체 — 접속 정보는
-관리자가 카톡으로 전달) · 크론 · i18n · 상태관리 라이브러리 · 차트 · 결제 SDK ·
-파일 업로드
+**쓰지 않는 것**: Supabase Storage · 메일 발송(Resend·SMTP 일체) · 문자·알림톡 ·
+i18n · 상태관리 라이브러리 · 차트 · 결제 SDK · 파일 업로드
+
+> 의뢰인에게 보내는 메일·문자·알림톡 채널을 만들지 않는다. 의뢰인에게 전할 말은 시스템이
+> 카톡 문구로 작성해 `/a` 「보낼 카톡」에 두고, 관리자가 직접 카톡으로 보낸 뒤 「카톡으로
+> 보내기」(공유/복사 = 보냈음)를 누른다(`notices.channel='outbox'`). 허브가 의뢰인에게 직접
+> 보내는 경로는 없다.
+
+> 크론은 **Vercel Cron 1개**(`/api/cron/tick`, 15분, `CRON_SECRET`)만. tick은 판단만 하고
+> 행동은 기존 서버 함수를 부른다. 완주하지 않으면 `/a` 배너가 빨갛고, 외부 heartbeat
+> (`HEARTBEAT_URL`, 선택)가 관리자에게 알린다. Vercel Cron은 Pro 유지가 전제다.
 
 > 스크린샷 등 안내용 이미지는 `public/guides/`에 커밋한다. 업로드 기능이 아니다.
 
@@ -55,8 +71,9 @@ lucide-react / date-fns / Vercel **함수 리전 icn1(서울)** / pnpm /
 ```
 src/
   app/
-    login/                  매직링크 요청
-    auth/callback/
+    login/                  이메일+비밀번호 로그인
+    auth/callback/          토큰 검증·역할별 이동
+    auth/link/              1회용 로그인 링크 착지 (토큰은 #프래그먼트, 버튼 클릭 후 소비)
     (admin)/a/
       page.tsx              프로젝트 목록
       [code]/page.tsx       상세 (탭: 단계·링크·범위·설정·종료)
@@ -64,6 +81,8 @@ src/
       page.tsx              포털 홈 (링크 보드 + 진행률 + 다음 할 일)
       steps/[key]/page.tsx  단계 상세 ← 가장 공들일 화면
     api/verify/[type]/route.ts
+    api/cron/tick/route.ts  유일한 크론 라우트 — 인증만 하고 runTick(now)을 부른다
+    api/push/ack/route.ts   푸시 「배달됨」 (서비스워커가 부른다)
     cost/page.tsx           고정비 계산기 (정적)
     privacy/page.tsx
   components/
@@ -74,6 +93,11 @@ src/
     supabase/  client.ts, server.ts, admin.ts
     verify/    github.ts, vercel.ts, supabase.ts
     steps.ts   STEP_TEMPLATE 상수 (안내문 본문 포함)
+    tick.ts    runTick(now) — 토큰 점검·재검증·장부 정리·보낼 카톡 거둠
+    notify.ts  pushAdmin — 장부(dedupe_key)를 거치는 관리자 푸시의 유일한 입구
+    outbox.ts  「보낼 카톡」 문구 작성·거둠·대체
+    preflight.ts 접속 정보 발급 전 점검 (빨강 = 발급 차단, 우회 없음)
+    magic-link.ts 로그인 링크 형태·유효시간
     cost.ts    RATES 상수 + 계산 함수
     offboard.ts OFFBOARD_CHECKLIST 상수
     slug.ts    조직 slug 정규화
@@ -84,11 +108,12 @@ supabase/migrations/
 
 ---
 
-## 4. 데이터 모델 — 7개 테이블
+## 4. 데이터 모델 — 8개 테이블
 
 ```
-admins(email)                     내 이메일 1건
+admins(email)                     내 이메일 1건 (+ tick heartbeat·토큰 점검 시각)
 push_subscriptions(endpoint)      내 휴대폰 알림 구독 (관리자만, 큐가 아니다)
+notices(dedupe_key)               장부: 푸시 발송 이력 + 「보낼 카톡」 문구. 큐가 아니다
 projects                          의뢰 사안
  ├─ project_guests(email)         의뢰인 접근 목록
  ├─ steps                         온보딩 단계
@@ -104,11 +129,22 @@ projects                          의뢰 사안
 - enum은 `text + check` 제약
 - **jsonb는 `steps.verify_result` 하나뿐이다**
 
+### notices — 장부이지 큐가 아니다
+`channel`(push|outbox) · `kind` · `dedupe_key`(unique, **반드시 에폭 포함**) · `status`
+(push: claimed→sent|failed / outbox: pending→sent|skipped|superseded) · `title`·`body`(outbox 문구
+전문 — 비밀번호·토큰·로그인 링크 금지) · `skip_reason`(admin|condition_cleared|cap) · `sent_at`
+(push: 푸시 서비스 201 / outbox: 관리자 「보냈음」) · `acked_at`(서비스워커 ack = 배달됨) · `day_kst`
+
+> 「이미 만들었는가」를 답하는 멱등 키다. 실패·거둔 행은 재시도하지 않는다 — 다음 tick이 조건을
+> 다시 계산해 새 키로 만든다. 같은 주제의 pending은 새 문구가 대체한다(superseded). 근거 조건이
+> 사라진 문구는 tick이 거둔다(condition_cleared). 관리자만 읽고, 쓰기는 service_role만.
+
 ### projects
 `code`(unique slug) · `name` · `client_name` · `client_email` ·
 `support_tier`(self|assisted) · `status`(onboarding|building|delivered|closed) ·
 `github_org` · `vercel_team` · `supabase_org` · `domain` ·
-`scope_md` · `scope_agreed_at` · `closed_at`
+`scope_md` · `scope_agreed_at` · `closed_at` · `access_sent_at`(접속 안내 「보냈음」 시각 —
+리마인드·미접속의 기준점) · `remind_paused_until`
 
 > `scope_md`는 통화·미팅에서 합의한 범위를 **내가 정리해 적는 마크다운 한 칸**이다.
 > 의뢰인은 읽기 전용. `scope_agreed_at` 이후 쌓인 `kind='request'` 코멘트 수가
@@ -118,6 +154,10 @@ projects                          의뢰 사안
 `project_id` · `order_index` · `key` · `title` · `description_md` ·
 `owner_side`(client|agency) · `verify_type`(manual|github|vercel|supabase) ·
 `status` · `checked_at` · `verified_at` · `verify_result jsonb` · `blocked_reason`
+
+> `verify_result`: `status`(3상태) · `code` · `checked_at`(CAS 기준값) · `client_attempts`(의뢰인이
+> 「완료했습니다」를 누른 횟수 — 막힘 판정의 유일한 분모) · `auto_checks`(자동 재확인 횟수, 판정에
+> 쓰지 않는다) · `next_check_at`(5m→30m→2h→6h→24h 백오프) · `first_failed_at`(dedupe 키의 에폭)
 
 > `src/lib/steps.ts`의 `STEP_TEMPLATE`에서 **복사**해 넣는다. 템플릿 관리 화면 없음.
 > `description_md`가 이 도구의 실질적 콘텐츠다. 성의 있게 쓴다.
@@ -159,8 +199,12 @@ todo → doing → client_done → verified
 - **비밀번호는 관리자가 발급·재발급한다** — `/a/[code]` 설정 탭
   「접속 정보 발급」이 임시 비밀번호와 안내문(주소+이메일+비밀번호)을 만들어
   주고, 카톡으로 전달한다. 재발급하면 이전 비밀번호는 무효
-- 보조 수단: 관리자가 생성하는 1회용 로그인 링크(매직링크, 24시간 유효).
-  비밀번호 입력을 어려워하는 의뢰인용 비상 수단
+- 보조 수단: 관리자가 생성하는 1회용 로그인 링크(매직링크). 비밀번호 입력을
+  어려워하는 의뢰인용 비상 수단. 유효시간은 코드가 아니라 Supabase 대시보드
+  Auth › Email › Email OTP Expiration(최대 86400초, 기본 3600초)이 결정한다 — 86400으로
+  설정하고 `MAGIC_LINK_TTL_HOURS`와 일치시킨다. 링크는 `/auth/link#token_hash=…`
+  프래그먼트 형태이며 **사람이 버튼을 누른 뒤에만** 소비된다(카톡 링크 미리보기·메일
+  스캐너가 먼저 열어도 소진되지 않게). 쿼리 파라미터 `?token_hash=`로 만들지 않는다
 - 로그인 후 분기: `admins`에 있으면 `/a`, `project_guests`에 있으면 `/p/[code]`
 - **초대 토큰 테이블을 만들지 않는다.** 프로젝트에 의뢰인 이메일을 등록해두고,
   그 이메일로 로그인하면 이메일 매칭으로 접근이 열린다
@@ -200,6 +244,10 @@ $$;
 `links`·`scope_md`·`status`·`verify_result`는 의뢰인 읽기 전용.
 `author_side`와 검증 결과는 **서버에서 결정**한다. 클라이언트 값을 믿지 않는다.
 
+가드 트리거는 **allow-list**다 — 새 컬럼은 추가하는 순간 기본이 「막힘」. `old.status`가
+`verified`/`skipped`인 행은 의뢰인이 어떤 갱신도 못 한다(가드 + RLS USING 이중 강제).
+`notices`·`push_subscriptions`·`admins`는 의뢰인 세션에 0행이다.
+
 ---
 
 ## 8. 검증 API — 3종, 3상태
@@ -216,6 +264,11 @@ $$;
 
 DNS 검증은 만들지 않는다. 도메인은 눈으로 확인한다.
 
+**검증은 사람이 누르지 않는다.** 의뢰인이 「완료했습니다」를 누르는 순간, 그리고 tick이
+`next_check_at`이 지난 완료 요청을 백오프로 다시 확인한다. 결과 저장은 CAS(`checked_at`
+비교)라 tick·화면 열림·의뢰인 클릭이 동시에 돌아도 알림은 한 번이다. 모든 외부 fetch에
+`AbortSignal.timeout`. `/api/verify`는 의뢰인 클릭에 60초 쿨다운.
+
 **사람이 「지금 확인」을 누르지 않는다.** `src/lib/verify/run.ts`가 단일 진입점이다.
 의뢰인이 「완료했습니다」를 누르는 순간 검증하고(확인되면 그 자리에서 `verified`),
 `/a`·`/a/[code]`·포털이 열릴 때 5분 넘은 완료 요청을 다시 확인한다 — 크론 대신
@@ -226,7 +279,11 @@ no_slug)를 실어 「지금 할 일」이 "초대 수락 필요: Vercel"처럼 
 
 **토큰 상태는 의뢰인보다 내가 먼저 안다.** `/a` 최상단 「검증 설정 점검」이
 토큰 3개를 실제로 호출해 초록/빨강으로 보여주고, 의뢰인 화면에서 실패한
-확인을 목록으로 띄운다. 의뢰인 화면에서 `error`는 「제작자 확인 중」으로
+확인을 목록으로 띄운다. tick도 매시간(마지막 점검 기록 기준) 점검해 초록↔빨강
+**전환**에만 푸시한다. **사전 점검 빨강 = 토큰 missing/invalid · Vercel 이메일 불일치 ·
+의뢰인 이메일 형식 오류/관리자 이메일과 동일** — 이때 접속 정보·비밀번호 발급·로그인
+링크가 막히고 우회 버튼은 없다. 푸시·크론 문제는 노랑 + 내 할 일이며 의뢰인 흐름을
+막지 않는다. 의뢰인 화면에서 `error`는 「제작자 확인 중」으로
 보인다 — 데이터는 그대로 `error`, 문구만 차분하게. (실제 사고: 토큰을
 등록하지 않은 채 의뢰인이 확인을 눌러 빨간 「확인 오류」를 봤다)
 
@@ -302,6 +359,15 @@ web search(공식 문서 도메인 한정)로 최신 상태를 확인해 답하�
   없음 · 미접속. `/a` 최상단과 `/a/[code]` 「현재 상황」에 칩으로, 누르면 그 탭
 - **수동 단계의 자기확인** — API로 확인할 수 없는 의뢰인 단계(`DONE_CHECKLIST`)는
   「완료했습니다」 전에 스스로 확인할 항목을 모두 체크해야 넘어간다. 저장하지 않는다
+- **보낼 카톡** — 의뢰인에게 전할 말(접속 안내·연결 확인·다음 안내·재요청·답글 알림)은
+  시스템이 완성 문구로 써서 `/a` 최상단 「보낼 카톡」에 둔다. 나는 「카톡으로 보내기」
+  (폰: 공유 창 / PC: 복사) 한 번으로 보내고, 그 순간 「보냈음」이 기록된다. 허브는 의뢰인에게
+  직접 보내지 않는다. 철 지난 문구는 tick이 거둔다. 한 사건에 푸시는 하나 — 사건 푸시가
+  이미 나갔으면 문구 생성은 조용하다. 적체(4시간)는 09~21시 KST에 하루 1회만 알린다
+- **알림은 배달(ack)까지 본다** — `notices.sent`는 푸시 서비스가 받은 것이지 폰에 뜬 것이
+  아니다. 서비스워커가 표시·클릭 시 `/api/push/ack`로 `acked_at`을 남긴다
+- **시계는 tick이다** — 15분마다 토큰 점검·재검증·장부 정리·보낼 카톡 거둠이 화면과 무관하게
+  돈다. 대시보드·포털 열림은 이중화일 뿐이다
 
 ### 오류 처리 — 의뢰인이 당황하지 않게
 
@@ -359,13 +425,21 @@ web search(공식 문서 도메인 한정)로 최신 상태를 확인해 답하�
 10. 컴포넌트에 한국어 문자열 직접 삽입 (`ko.ts` 사용 · 단, 단계 안내문은 `steps.ts`)
 11. 검증 `error`를 `not_found`로 처리
 12. 조직 slug를 정규화 없이 그대로 저장
+13. `CRON_SECRET` 검증 없는 크론 라우트
+14. `dedupe_key` 없는 자동 알림·문구 · 에폭 없는 `dedupe_key`
+15. 사전 점검 빨강 우회 버튼
+16. 토큰을 GET 즉시 소비하는 로그인 링크(쿼리 파라미터 `token_hash`)
+17. 의뢰인에게 직접 보내는 메일·문자·알림톡 경로
+18. `notices.body`에 비밀번호·토큰·로그인 링크
 
 ---
 
 ## 12. 만들지 않는 것 (요청받아도 되묻기)
 
 파일 업로드·첨부 · 기획 문답 폼 · 멀티테넌시 · 온보딩 템플릿 관리 UI ·
-초대 토큰 테이블 · 감사 로그 테이블 · 알림 큐 테이블 · 크론 리마인더 ·
+초대 토큰 테이블 · 감사 로그 테이블 · 알림 큐·재시도 워커·워크플로 엔진(장부 `notices`
+1개는 둔다 — 큐가 아니라 멱등 키. 실패 행은 재시도하지 않고 다음 tick이 새 키로 다시 계산한다) ·
+두 번째 크론 · 자동 발송 채널 ·
 동의 이력 테이블 · 요율 DB 테이블 · 산출물 승인 워크플로 ·
 일정·간트·마일스톤 · 실시간 채팅 · 청구서·정산 · 실시간 협업 ·
 회원가입 · 결제 · 다국어 · 다크 모드 · 차트 대시보드
@@ -382,6 +456,10 @@ web search(공식 문서 도메인 한정)로 최신 상태를 확인해 답하�
 4. 외부 API → try/catch + 3상태 결과
 5. 새 화면 → 375px 모바일 확인 (특히 `/p`)
 6. 환경변수 추가 → `.env.example` 동기화
+7. 새 자동 알림·문구 → 에폭 있는 `dedupe_key` + `ko.ts` 템플릿 + `notices` 기록 + 거둠 조건
+8. 새 외부 API 응답 필드 → 공식 OpenAPI 또는 실호출 1회로 확인 후 코드에
+9. 새 외부 fetch → `AbortSignal.timeout`
+10. 새 tick 작업 → `runTick` 안에 넣고 로컬 `curl`로 재현
 
 ---
 

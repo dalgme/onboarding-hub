@@ -5,7 +5,7 @@ import { after } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { normalizeSlug } from "@/lib/slug";
-import { notifyAdmin } from "@/lib/push";
+import { pushAdmin, minuteOf } from "@/lib/notify";
 import { isAutoVerifyType, runVerification } from "@/lib/verify/run";
 import { ko } from "@/content/ko";
 import { CONNECT_META } from "@/lib/steps";
@@ -13,17 +13,17 @@ import { CONNECT_META } from "@/lib/steps";
 type StepWithProject = {
   title: string;
   verify_type: string;
-  projects: { name: string; code: string } | null;
+  projects: { id: string; name: string; code: string } | null;
 };
 
 // 알림 문구에 쓸 단계 제목·프로젝트 이름. 의뢰인 세션(RLS)으로 읽는다
 async function describeStep(
   stepId: string,
-): Promise<{ step: string; project: string; code: string; verifyType: string } | null> {
+): Promise<{ step: string; project: string; projectId: string; code: string; verifyType: string } | null> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("steps")
-    .select("title, verify_type, projects(name, code)")
+    .select("title, verify_type, projects(id, name, code)")
     .eq("id", stepId)
     .maybeSingle();
   const row = data as unknown as StepWithProject | null;
@@ -31,6 +31,7 @@ async function describeStep(
   return {
     step: row.title,
     project: row.projects.name,
+    projectId: row.projects.id,
     code: row.projects.code,
     verifyType: row.verify_type,
   };
@@ -90,7 +91,14 @@ export async function updateStepStatus(
           ? ko.push.clientDone(info.project, info.step)
           : ko.push.blocked(info.project, info.step, blockedReason ?? "");
       after(() =>
-        notifyAdmin({ ...message, url: `/a/${info.code}?tab=steps`, tag: `step-${stepId}` }),
+        pushAdmin({
+          dedupeKey: `client_event:${stepId}:${status}:${minuteOf(now)}`,
+          kind: "client_event",
+          projectId: info.projectId,
+          stepId,
+          ...message,
+          url: `/a/${info.code}?tab=steps`,
+        }),
       );
     }
   }
@@ -150,13 +158,17 @@ export async function addGuestComment(
 
   const supabase = await createClient();
   // author_side는 RLS WITH CHECK가 검사한다 — 의뢰인 세션이면 client만 통과
-  const { error } = await supabase.from("comments").insert({
-    project_id: projectId,
-    step_id: stepId,
-    author_side: "client",
-    kind,
-    body,
-  });
+  const { data: inserted, error } = await supabase
+    .from("comments")
+    .insert({
+      project_id: projectId,
+      step_id: stepId,
+      author_side: "client",
+      kind,
+      body,
+    })
+    .select("id")
+    .maybeSingle();
 
   if (error) return { ok: false, message: ko.common.error };
   revalidatePath(`/p/${code}`, "layout");
@@ -168,8 +180,13 @@ export async function addGuestComment(
     .maybeSingle();
   if (project) {
     const preview = body.length > 80 ? `${body.slice(0, 80)}…` : body;
+    const commentId = inserted?.id ?? minuteOf(new Date());
     after(() =>
-      notifyAdmin({
+      pushAdmin({
+        dedupeKey: `client_event:comment:${commentId}`,
+        kind: "client_event",
+        projectId,
+        stepId,
         ...ko.push.comment(project.name, kind, preview),
         url: `/a/${code}?tab=steps`,
       }),
@@ -259,10 +276,13 @@ export async function requestScreenShareHelp(
   const info = await describeStep(stepId);
   if (info) {
     after(() =>
-      notifyAdmin({
+      pushAdmin({
+        dedupeKey: `client_event:${stepId}:need_help:${minuteOf(new Date())}`,
+        kind: "client_event",
+        projectId,
+        stepId,
         ...ko.push.needHelp(info.project, info.step),
         url: `/a/${info.code}?tab=steps`,
-        tag: `step-${stepId}`,
       }),
     );
   }

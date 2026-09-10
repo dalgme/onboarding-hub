@@ -43,7 +43,20 @@ export const ko = {
       "비밀번호를 잊으셨거나 안내받지 못하셨다면 담당자에게 연락해 주세요. 새 비밀번호나 접속 링크를 보내드립니다.",
     errorNoAccess:
       "이 이메일로 열린 프로젝트가 없습니다. 안내받은 이메일 주소가 맞는지 확인하시고, 다르면 담당자에게 알려 주세요.",
-    errorAuth: "접속 링크가 만료되었거나 잘못되었습니다. 담당자에게 새 링크를 요청해 주세요.",
+    errorAuth:
+      "접속 링크의 유효시간이 지났거나 이미 사용된 링크입니다. 안내받은 이메일과 비밀번호로 아래에서 로그인하시면 됩니다. 비밀번호를 모르시면 담당자에게 카톡으로 알려 주세요.",
+  },
+
+  authLink: {
+    title: "포털 로그인",
+    description:
+      "담당자가 보내드린 1회용 로그인 링크입니다. 아래 버튼을 누르면 비밀번호 없이 바로 로그인됩니다.",
+    button: "로그인하기",
+    going: "로그인하는 중…",
+    hint: "이 링크는 한 번만 쓸 수 있습니다. 로그인 뒤에는 안내받은 이메일과 비밀번호로 다시 들어오실 수 있습니다.",
+    invalid:
+      "링크가 온전하지 않습니다. 카톡에서 링크 전체를 눌렀는지 확인해 주세요. 계속 안 되면 안내받은 이메일과 비밀번호로 로그인하시면 됩니다.",
+    toLogin: "이메일과 비밀번호로 로그인",
   },
 
   passwordChange: {
@@ -285,12 +298,71 @@ export const ko = {
     }),
     autoVerified: (project: string, step: string) => ({
       title: `${project} · 연결 확인됨`,
-      body: `「${step}」 실제 연결을 확인해 자동으로 완료 처리했습니다.`,
+      body: `「${step}」 실제 연결을 확인해 자동으로 완료 처리했습니다. 다음 안내 카톡 문구를 「보낼 카톡」에 준비했습니다.`,
     }),
     autoPending: (project: string, step: string, detail: string) => ({
       title: `${project} · 완료 요청 (아직 확인 안 됨)`,
-      body: `「${step}」 — ${detail}. 초대를 수락하면 다음에 대시보드를 열 때 자동으로 확인됩니다.`,
+      body: `「${step}」 — ${detail}. 초대를 수락하면 15분 안에 자동으로 다시 확인됩니다.`,
     }),
+    tokenRed: (envName: string, status: string) => ({
+      title: "검증 토큰 문제",
+      body: `${envName}: ${status}. 이 상태로는 의뢰인의 연결을 확인할 수 없다 — 대시보드 「검증 설정 점검」을 본다.`,
+    }),
+    tokenOk: (envName: string) => ({
+      title: "검증 토큰 복구됨",
+      body: `${envName} 이(가) 다시 정상이다. 밀린 완료 요청은 자동으로 다시 확인한다.`,
+    }),
+    verifyRecovered: (project: string, step: string) => ({
+      title: `${project} · 자동 확인 재개`,
+      body: `「${step}」 — 내 쪽 문제가 해결돼 다시 확인하고 있다.`,
+    }),
+    outboxNew: (client: string, reason: string) => ({
+      title: `보낼 카톡 1건 · ${client}`,
+      body: `${reason} — 대시보드에서 복사해 카톡으로 보낸다.`,
+    }),
+    outboxStale: (count: number) => ({
+      title: `보낼 카톡 ${count}건이 기다리는 중`,
+      body: "4시간 넘게 보내지 않은 문구가 있다. 지금 보내거나 「보내지 않음」으로 정리한다.",
+    }),
+  },
+
+  // 「보낼 카톡」 문구 — 시스템이 쓰고 관리자가 카톡으로 보낸다. 허브는 의뢰인에게 직접 보내지 않는다.
+  // 원칙: 한 일은 먼저 인정, 바꿀 것은 하나, 원인은 화면 탓, 끝은 화면공유 제안. 8줄·300자 안팎, 링크 1개.
+  // 금지어: 아직·안 하셨·빨리·지연·미완료·독촉·확인 바랍니다·되돌려짐·실패
+  outbox: {
+    nextStep: (p: { client: string; stepTitle: string; nextTitle: string | null; portalUrl: string }) =>
+      `${p.client}님, 「${p.stepTitle}」 연결이 확인됐습니다. 감사합니다.\n` +
+      (p.nextTitle
+        ? `다음은 「${p.nextTitle}」입니다. 포털에서 바로 이어서 하실 수 있어요.\n${p.portalUrl}`
+        : `의뢰인 쪽 작업은 여기까지입니다. 이제 제가 개발을 시작합니다. 진행 상황은 포털에서 보실 수 있어요.\n${p.portalUrl}`),
+    rerequestNoSlug: (p: { client: string; serviceName: string; orgNoun: string; stepTitle: string; portalUrl: string }) =>
+      `${p.client}님, 「${p.stepTitle}」 완료 눌러 주신 것 확인했습니다.\n` +
+      `한 가지만 더 — ${p.serviceName} ${p.orgNoun} 주소가 포털에 저장되지 않은 상태예요. ` +
+      `${p.serviceName} 화면 주소창의 주소를 통째로 붙여넣어 주시면 제가 바로 확인해 드릴게요.\n${p.portalUrl}\n` +
+      `어려우시면 화면공유 20분이면 함께 끝낼 수 있어요.`,
+    rerequestCheckInvite: (p: {
+      client: string;
+      serviceName: string;
+      stepTitle: string;
+      inviteUrl: string;
+      email: string;
+      roleName: string;
+    }) =>
+      `${p.client}님, 「${p.stepTitle}」 완료 눌러 주신 것 확인했습니다.\n` +
+      `다만 ${p.serviceName} 쪽에서 제 초대가 보이지 않아요. 초대 화면에서 아래 이메일이 목록에 있는지 한 번만 봐 주세요.\n` +
+      `▶ 초대 화면: ${p.inviteUrl}\n▶ 이메일: ${p.email} (역할: ${p.roleName})\n` +
+      `목록에 없으면 위 이메일로 초대해 주시면 됩니다. 있으면 제가 수락하는 중이니 그대로 두셔도 돼요.\n` +
+      `어려우시면 화면공유 20분이면 함께 끝낼 수 있어요.`,
+    adminReplied: (p: { client: string; body: string; portalUrl: string }) =>
+      `${p.client}님, 포털에 남겨 주신 글에 답글을 달았습니다.\n\n${p.body}\n\n포털에서도 보실 수 있어요: ${p.portalUrl}`,
+    titles: {
+      nextStep: (stepTitle: string) => `「${stepTitle}」 확인됨 · 다음 안내`,
+      rerequestNoSlug: (serviceName: string) => `${serviceName} 주소 부탁`,
+      rerequestCheckInvite: (serviceName: string) => `${serviceName} 초대 확인 부탁`,
+      adminReplied: "답글 알림",
+      credentials: "접속 안내",
+    },
+    credentialsBodyMasked: "(비밀번호는 발급 화면에만 표시 — 장부에 남기지 않는다)",
   },
 
   admin: {
@@ -308,6 +380,63 @@ export const ko = {
     portalLink: "의뢰인 포털 열기",
     copyPortalLink: "포털 주소 복사",
 
+    outbox: {
+      title: "보낼 카톡",
+      countTitle: (n: number) => `보낼 카톡 ${n}건`,
+      description:
+        "시스템이 써 둔 문구다. 「카톡으로 보내기」를 누르면 폰에서는 공유 창이, PC에서는 복사가 되고 그 순간 「보냈음」으로 기록된다. 붙여넣고 보내면 끝. 같은 내용은 의뢰인 포털에도 떠 있으므로 늦게 보내도 의뢰인 화면은 정확하다.",
+      empty: "지금 보낼 문구가 없다.",
+      send: "카톡으로 보내기",
+      skip: "보내지 않음",
+      restore: "되돌리기",
+      busy: "처리 중…",
+      copied: "복사됐다 — 카톡에 붙여넣어 보낸다. 「보냈음」으로 기록했다.",
+      shared: "공유 창으로 보냈다. 「보냈음」으로 기록했다.",
+      copyFailed: "복사가 안 됐다 — 본문을 길게 눌러 직접 복사한다. 기록은 남기지 않았다.",
+      recent: "최근 처리 (24시간)",
+      status: {
+        sent: "보냈음",
+        skipped: "보내지 않음",
+        cleared: "필요 없어짐 (자동)",
+        superseded: "새 문구로 대체됨",
+      },
+      createdAt: (time: string) => `${time} 작성`,
+      kinds: {
+        credentials: "접속 안내",
+        next_step: "연결 확인 · 다음 안내",
+        rerequest: "다시 부탁",
+        reminder: "리마인드",
+        admin_replied: "답글 알림",
+        scope_ready: "범위 안내",
+        link_pinned: "링크 안내",
+        closed: "완료 안내",
+      } as Record<string, string>,
+    },
+    preflight: {
+      title: "접속 정보 발급 전 점검",
+      blocked: "접속 정보를 만들 수 없다 —",
+      allClear: "발급 조건을 모두 충족한다.",
+      redHint: "빨간 항목이 있으면 접속 정보·로그인 링크를 만들 수 없다. 우회 버튼은 없다 — 이 상태로 나간 접속 정보는 의뢰인의 초대가 헛돌게 만든다.",
+      yellowHint: "노란 항목은 발급을 막지 않는다. 한 번 더 확인만 한다.",
+      missing: "미설정",
+      invalid: "토큰 오류",
+      tokenRed: (envName: string, status: string) => `${envName} ${status} — 의뢰인의 연결을 확인할 수 없다`,
+      tokenError: (envName: string) => `${envName} 점검이 일시적으로 실패했다(네트워크). 잠시 뒤 새로고침`,
+      emailMismatch: "Vercel 계정 이메일이 허브 관리자 이메일과 다르다 — 의뢰인의 초대를 수락할 수 없다",
+      adminEmailMissing: "허브 관리자 이메일이 등록되지 않았다",
+      clientEmailInvalid: "의뢰인 이메일 형식이 올바르지 않다",
+      clientEmailIsAdmin: "의뢰인 이메일이 관리자 이메일과 같다",
+      clientEmailTypo: (domain: string, suggestion: string) =>
+        `의뢰인 이메일 도메인 ${domain} — ${suggestion} 의 오타가 아닌지 확인`,
+      clientEmailNoMx: (domain: string) => `의뢰인 이메일 도메인 ${domain} 이(가) 메일을 받지 못하는 도메인으로 보인다 — 철자 확인`,
+    },
+    tick: {
+      title: "자동 점검(크론)",
+      never: "아직 한 번도 돌지 않았다 — CRON_SECRET 등록과 프로덕션 배포를 확인한다.",
+      stale: (minutes: number) => `마지막 완주가 ${minutes}분 전이다. 15분마다 돌아야 한다 — Vercel Cron 상태를 확인한다.`,
+      unfinished: "마지막 실행이 완주하지 못했다 — 런타임 로그에서 [tick] 을 찾는다.",
+      ok: (minutes: number) => `정상 — ${minutes}분 전 완주`,
+    },
     health: {
       title: "검증 설정 점검",
       description:
@@ -360,6 +489,7 @@ export const ko = {
       scopeUnconfirmed: "범위 미확정",
       noGuest: "포털 접근 이메일 없음",
       notSeen: (days: number) => `의뢰인 ${days}일째 미접속`,
+      accessNotSent: "접속 안내 아직 안 보냄",
     },
     statusCard: {
       lastSeen: "의뢰인 마지막 접속",
@@ -524,6 +654,11 @@ export const ko = {
       reissue: "재발급",
       issuing: "발급하는 중…",
       copyMessage: "안내문 복사",
+      sendKakao: "카톡으로 보내기 (보냈음으로 기록)",
+      sentRecorded: (time: string) => `접속 안내 보냈음 · ${time}`,
+      notSentYet: "접속 안내를 아직 보내지 않았다 — 발급 후 「카톡으로 보내기」를 누르면 기록된다.",
+      sentJustNow: "보냈음으로 기록했다. 카톡에 붙여넣어 보내면 끝.",
+      blockedTitle: "접속 정보를 만들 수 없다",
       messageReady: (email: string) =>
         `${email} 접속 안내문이 준비되었습니다. 카톡에 붙여넣으세요.`,
       kakaoMessage: (params: {
@@ -560,7 +695,8 @@ export const ko = {
 
     magicLink: {
       title: "로그인 링크 만들기 (보조 수단)",
-      help: "비밀번호 없이 클릭 한 번으로 로그인되는 1회용 링크. 의뢰인이 비밀번호 입력을 어려워할 때 비상용으로 쓴다. 링크는 24시간 유효하고 1회만 쓸 수 있다.",
+      help: (hours: number) =>
+        `비밀번호 없이 클릭 한 번으로 로그인되는 1회용 링크. 의뢰인이 비밀번호 입력을 어려워할 때 비상용으로 쓴다. 링크는 ${hours}시간 유효하고 1회만 쓸 수 있다 (유효시간은 Supabase 대시보드 Auth › Email OTP Expiration 값이 결정한다 — MAGIC_LINK_TTL_HOURS 와 맞춘다). 링크는 버튼 화면을 먼저 열고, 의뢰인이 버튼을 눌러야 소비된다.`,
       warning:
         "링크만 있으면 로그인되니, 반드시 그 이메일의 주인에게만 전달할 것.",
       generate: "링크 만들기",

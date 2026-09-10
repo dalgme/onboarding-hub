@@ -3,6 +3,8 @@ import { format } from "date-fns";
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { checkVerifyTokens, type TokenStatus } from "@/lib/verify/health";
+import { createClient } from "@/lib/supabase/server";
+import { differenceInMinutes } from "date-fns";
 import { ko } from "@/content/ko";
 import type { VerifyResult } from "@/lib/database.types";
 
@@ -30,9 +32,19 @@ export async function VerifyHealth({
 }: {
   recentErrors: RecentVerifyError[];
 }) {
-  const tokens = await checkVerifyTokens();
+  const supabase = await createClient();
+  const [tokens, { data: adminRow }] = await Promise.all([
+    checkVerifyTokens(),
+    supabase
+      .from("admins")
+      .select("last_tick_started_at, last_tick_finished_at")
+      .order("created_at")
+      .limit(1)
+      .maybeSingle(),
+  ]);
   const allOk = tokens.every((token) => token.status === "ok");
   const copy = ko.admin.health;
+  const tick = describeTick(adminRow ?? null);
 
   return (
     <section
@@ -78,6 +90,12 @@ export async function VerifyHealth({
           {copy.fix}
         </p>
       ) : null}
+
+      <p className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 text-sm">
+        <span className="font-medium">{ko.admin.tick.title}</span>
+        <Badge variant={tick.ok ? "success" : "destructive"}>{tick.ok ? "정상" : "확인 필요"}</Badge>
+        <span className="text-xs text-muted-foreground">{tick.text}</span>
+      </p>
 
       <div className="mt-3 border-t border-border/60 pt-3">
         <p className="text-xs font-medium text-muted-foreground">
@@ -154,4 +172,25 @@ export function VerifyHealthFallback() {
       {ko.admin.health.checking}
     </section>
   );
+}
+
+// 크론 tick 의 생존 — 마지막 완주 시각으로 판정한다. 15분 주기라 45분이 넘으면 죽은 것이다.
+// started 만 갱신되고 finished 가 뒤처지면 「완주 못 함」이다
+const TICK_STALE_MINUTES = 45;
+
+function describeTick(
+  row: { last_tick_started_at: string | null; last_tick_finished_at: string | null } | null,
+): { ok: boolean; text: string } {
+  const copy = ko.admin.tick;
+  if (!row?.last_tick_finished_at) return { ok: false, text: copy.never };
+  const finishedAgo = differenceInMinutes(new Date(), new Date(row.last_tick_finished_at));
+  if (
+    row.last_tick_started_at &&
+    row.last_tick_started_at > row.last_tick_finished_at &&
+    differenceInMinutes(new Date(), new Date(row.last_tick_started_at)) > 10
+  ) {
+    return { ok: false, text: copy.unfinished };
+  }
+  if (finishedAgo > TICK_STALE_MINUTES) return { ok: false, text: copy.stale(finishedAgo) };
+  return { ok: true, text: copy.ok(finishedAgo) };
 }

@@ -26,6 +26,9 @@ import { AccessPanel } from "@/app/(admin)/a/[code]/access-panel";
 import { VerifyTokenWarning } from "@/app/(admin)/a/verify-health";
 import { ProjectStatus } from "@/app/(admin)/a/[code]/project-status";
 import { reverifyStale } from "@/lib/verify/run";
+import { magicLinkTtlHours } from "@/lib/magic-link";
+import { runPreflight } from "@/lib/preflight";
+import { OutboxSection } from "@/app/(admin)/a/outbox-section";
 
 const TABS = [
   { key: "process", label: ko.admin.tabProcess },
@@ -88,10 +91,13 @@ export default async function AdminProjectPage({
 
   // 게스트 계정 상태(마지막 로그인·임시 비밀번호 여부) — 인증 서버에서 조회
   const adminAuth = createAdminClient();
-  const { data: userList } =
+  const [{ data: userList }, preflight] =
     tab === "settings"
-      ? await adminAuth.auth.admin.listUsers({ page: 1, perPage: 1000 })
-      : { data: null };
+      ? await Promise.all([
+          adminAuth.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+          runPreflight({ clientEmail: project.client_email }),
+        ])
+      : [{ data: null }, null];
   const accountByEmail: Record<
     string,
     { lastSignInAt: string | null; tempPassword: boolean }
@@ -160,6 +166,10 @@ export default async function AdminProjectPage({
         comments={comments ?? []}
         guests={guests ?? []}
       />
+
+      <Suspense fallback={null}>
+        <OutboxSection projectId={project.id} />
+      </Suspense>
 
       <nav className="flex gap-1 border-b border-border">
         {TABS.map((item) => (
@@ -258,6 +268,9 @@ export default async function AdminProjectPage({
             projectId={project.id}
             projectCode={code}
             projectName={project.name}
+            linkTtlHours={magicLinkTtlHours()}
+            preflightIssues={preflight?.issues ?? []}
+            accessSentAt={project.access_sent_at}
           />
         </div>
       ) : null}

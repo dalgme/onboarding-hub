@@ -12,23 +12,44 @@ self.addEventListener("fetch", () => {
   // 네트워크 통과 (기본 동작)
 });
 
-// 서버가 보낸 알림을 표시한다. 본문은 {title, body, url, tag}
+// 「배달됨」을 서버에 남긴다 — 표시된 순간과 누른 순간 모두. 실패해도 조용히 넘어간다.
+// 인증은 이 기기의 구독 endpoint 로 한다(세션 쿠키 불필요).
+async function ack(key) {
+  if (!key) return;
+  try {
+    const subscription = await self.registration.pushManager.getSubscription();
+    if (!subscription) return;
+    await fetch("/api/push/ack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, endpoint: subscription.endpoint }),
+      keepalive: true,
+    });
+  } catch {
+    // ack 는 진단용이다. 알림 표시를 막지 않는다
+  }
+}
+
+// 서버가 보낸 알림을 표시한다. 본문은 {title, body, url, tag, key}
 self.addEventListener("push", (event) => {
-  let payload = { title: "온보딩 허브", body: "", url: "/a", tag: undefined };
+  let payload = { title: "온보딩 허브", body: "", url: "/a", tag: undefined, key: undefined };
   try {
     payload = { ...payload, ...event.data.json() };
   } catch {
     // 본문이 비어 있어도 알림은 띄운다
   }
   event.waitUntil(
-    self.registration.showNotification(payload.title, {
-      body: payload.body,
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
-      tag: payload.tag,
-      renotify: Boolean(payload.tag),
-      data: { url: payload.url },
-    }),
+    Promise.all([
+      self.registration.showNotification(payload.title, {
+        body: payload.body,
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        tag: payload.tag,
+        renotify: Boolean(payload.tag),
+        data: { url: payload.url, key: payload.key },
+      }),
+      ack(payload.key),
+    ]),
   );
 });
 
@@ -36,6 +57,8 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = (event.notification.data && event.notification.data.url) || "/a";
+  const key = event.notification.data && event.notification.data.key;
+  event.waitUntil(ack(key));
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       const client = clients.find((c) => "focus" in c && "navigate" in c);

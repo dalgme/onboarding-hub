@@ -1,4 +1,4 @@
-import { makeResult, type VerifyResult } from "@/lib/verify/types";
+import { FETCH_TIMEOUT_MS, makeResult, type VerifyResult } from "@/lib/verify/types";
 
 // 내 토큰으로 "내가 이 팀의 확정 멤버인가"를 확인한다.
 //  1) /v2/user            → 내 id (응답 필드는 `id`다 — `uid`가 아니다)
@@ -18,6 +18,7 @@ export async function verifyVercelMembership(team: string): Promise<VerifyResult
     const meResponse = await fetch("https://api.vercel.com/v2/user", {
       headers,
       cache: "no-store",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (meResponse.status === 401 || meResponse.status === 403) {
       return makeResult("error", `Vercel 토큰 오류 (HTTP ${meResponse.status})`);
@@ -34,6 +35,7 @@ export async function verifyVercelMembership(team: string): Promise<VerifyResult
     const teamsResponse = await fetch("https://api.vercel.com/v2/teams?limit=100", {
       headers,
       cache: "no-store",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (teamsResponse.status === 401 || teamsResponse.status === 403) {
       return makeResult("error", `Vercel 토큰 오류 (HTTP ${teamsResponse.status})`);
@@ -57,7 +59,7 @@ export async function verifyVercelMembership(team: string): Promise<VerifyResult
 
     const membersResponse = await fetch(
       `https://api.vercel.com/v3/teams/${encodeURIComponent(found.id)}/members?limit=100`,
-      { headers, cache: "no-store" },
+      { headers, cache: "no-store", signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) },
     );
     if (membersResponse.status === 404 || membersResponse.status === 403) {
       return makeResult("not_found", "팀 멤버 목록을 볼 권한이 아직 없습니다");

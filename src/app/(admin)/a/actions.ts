@@ -9,6 +9,10 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminUser } from "@/lib/auth";
 import { OPTIONAL_STEP_TEMPLATES, STEP_TEMPLATE } from "@/lib/steps";
 import { normalizeSlug } from "@/lib/slug";
+import { buildMagicLinkUrl } from "@/lib/magic-link";
+import { preflightBlockReason } from "@/lib/preflight";
+import { onAdminReplied, recordCredentialsSent } from "@/lib/outbox";
+import { after } from "next/server";
 import { ko } from "@/content/ko";
 import type { ActionResult } from "@/app/(guest)/p/[code]/actions";
 
@@ -408,13 +412,17 @@ export async function addAdminComment(
 
   const supabase = await createClient();
   const repliedAt = new Date().toISOString();
-  const { error } = await supabase.from("comments").insert({
-    project_id: projectId,
-    step_id: stepId,
-    author_side: "admin",
-    kind,
-    body,
-  });
+  const { data: inserted, error } = await supabase
+    .from("comments")
+    .insert({
+      project_id: projectId,
+      step_id: stepId,
+      author_side: "admin",
+      kind,
+      body,
+    })
+    .select("id, projects(code, client_name)")
+    .maybeSingle();
   if (error) return { ok: false, message: ko.common.error };
 
   // 답했다는 것은 읽었다는 뜻 — 답글 이전에 온 의뢰인 글을 읽음 처리한다.
@@ -427,6 +435,20 @@ export async function addAdminComment(
     .eq("author_side", "client")
     .is("read_at", null)
     .lte("created_at", repliedAt);
+
+  // 답글은 포털에 있지만 의뢰인은 카톡을 본다 — 「답글 달았습니다 + 본문」 문구를 보낼 카톡에
+  const project = (inserted as unknown as { id: string; projects: { code: string; client_name: string } | null } | null);
+  if (project?.projects && inserted?.id) {
+    const info = {
+      commentId: inserted.id,
+      projectId,
+      stepId,
+      body,
+      projectCode: project.projects.code,
+      clientName: project.projects.client_name,
+    };
+    after(() => onAdminReplied(info));
+  }
 
   revalidateProject(code);
   return { ok: true };
@@ -496,6 +518,11 @@ export async function issueGuestPassword(
     .eq("email", email)
     .maybeSingle();
   if (!guestRow) return { ok: false, message: ko.common.error };
+
+  // 사전 점검 빨강이면 만들지 않는다 — 우회 없음. 이 상태로 나간 접속 정보는
+  // 의뢰인의 초대를 헛돌게 한다 (실제 사고 2건의 공통 원인)
+  const blocked = await preflightBlockReason(email);
+  if (blocked) return { ok: false, message: blocked };
 
   const password = generateTempPassword();
   const admin = createAdminClient();
@@ -588,6 +615,9 @@ export async function generateGuestMagicLink(
     .maybeSingle();
   if (!guestRow) return { ok: false, message: ko.common.error };
 
+  const blocked = await preflightBlockReason(email.toLowerCase());
+  if (blocked) return { ok: false, message: blocked };
+
   const headerList = await headers();
   const host = headerList.get("host");
   const proto = headerList.get("x-forwarded-proto") ?? "https";
@@ -616,9 +646,11 @@ export async function generateGuestMagicLink(
   const hashedToken = data?.properties?.hashed_token;
   if (error || !hashedToken) return { ok: false, message: ko.common.error };
 
-  // Supabase의 action_link 대신 우리 콜백으로 직접 연결한다 —
-  // /auth/callback이 token_hash를 검증하고 역할에 맞게 이동시킨다.
-  const link = `${origin}/auth/callback?token_hash=${hashedToken}&type=magiclink`;
+  // Supabase의 action_link 대신 우리 착지 화면으로 연결한다. 토큰은 프래그먼트(#)에
+  // 실어 서버·카톡 링크 미리보기·메일 스캐너에는 전달되지 않게 하고, 의뢰인이
+  // 버튼을 누른 뒤에만 /auth/callback 이 검증·소비한다 (GET 즉시 소비하던 이전 형태는
+  // 미리보기가 먼저 열어 링크를 태워 버렸다).
+  const link = buildMagicLinkUrl(origin, hashedToken);
   return { ok: true, link };
 }
 
@@ -642,5 +674,73 @@ export async function markClientCommentsRead(
     .is("read_at", null);
   if (error) return { ok: false, message: ko.common.error };
   revalidateProject(parsed.data.code);
+  return { ok: true };
+}
+
+
+// ── 「보낼 카톡」 ──────────────────────────────────────────────────
+
+const outboxSchema = z.object({
+  id: z.uuid(),
+  action: z.enum(["sent", "skipped", "restore"]),
+});
+
+// 카드 버튼 3개. 「카톡으로 보내기」는 화면에서 공유/복사가 성공한 뒤에만 sent 를 부른다
+export async function handleOutbox(
+  input: z.infer<typeof outboxSchema>,
+): Promise<ActionResult> {
+  const parsed = outboxSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: ko.common.error };
+  if (!(await isAdminUser())) return { ok: false, message: ko.common.unauthorized };
+
+  const admin = createAdminClient();
+  const now = new Date().toISOString();
+  const { id, action } = parsed.data;
+  let query = admin.from("notices").update(
+    action === "sent"
+      ? { status: "sent", sent_at: now, skip_reason: null }
+      : action === "skipped"
+        ? { status: "skipped", skip_reason: "admin", sent_at: null }
+        : { status: "pending", sent_at: null, skip_reason: null },
+  ).eq("id", id).eq("channel", "outbox");
+  query = action === "restore" ? query.in("status", ["sent", "skipped"]) : query.eq("status", "pending");
+  const { data, error } = await query.select("id, kind, project_id, projects(code)");
+  if (error || !data || data.length === 0) return { ok: false, message: ko.common.error };
+
+  const row = data[0] as unknown as { kind: string; project_id: string | null; projects: { code: string } | null };
+  // 접속 안내를 보냈으면 프로젝트의 「접속 안내 보냄」 시각도 함께
+  if (action === "sent" && row.kind === "credentials" && row.project_id) {
+    await admin.from("projects").update({ access_sent_at: now }).eq("id", row.project_id);
+  }
+  revalidatePath("/a");
+  if (row.projects?.code) revalidatePath(`/a/${row.projects.code}`, "layout");
+  return { ok: true };
+}
+
+const accessSentSchema = z.object({
+  projectId: z.uuid(),
+  code: z.string().min(1),
+  email: z.email(),
+  bodyMasked: z.string().min(1).max(2000),
+});
+
+// 발급 화면의 「카톡으로 보내기」— 공유/복사가 성공한 순간 접속 안내를 보낸 것으로 기록한다.
+// 장부에는 비밀번호 없는 본문만 남는다
+export async function markAccessSent(
+  input: z.infer<typeof accessSentSchema>,
+): Promise<ActionResult> {
+  const parsed = accessSentSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: ko.common.error };
+  if (!(await isAdminUser())) return { ok: false, message: ko.common.unauthorized };
+  const { projectId, code, email, bodyMasked } = parsed.data;
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("projects")
+    .update({ access_sent_at: new Date().toISOString() })
+    .eq("id", projectId);
+  if (error) return { ok: false, message: ko.common.error };
+  await recordCredentialsSent({ projectId, email: email.toLowerCase(), body: bodyMasked });
+  revalidateProject(code);
   return { ok: true };
 }

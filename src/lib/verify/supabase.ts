@@ -1,4 +1,4 @@
-import { makeResult, type VerifyResult } from "@/lib/verify/types";
+import { FETCH_TIMEOUT_MS, makeResult, type VerifyResult } from "@/lib/verify/types";
 
 // 내 개인 액세스 토큰으로 조직 멤버 목록을 조회해 내 이메일이 포함됐는지 확인한다.
 // 조직에 속해 있지 않으면 조회가 4xx → not_found로 판정.
@@ -17,6 +17,7 @@ export async function verifySupabaseMembership(
       {
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       },
     );
 

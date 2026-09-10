@@ -2,6 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { runVerification } from "@/lib/verify/run";
+import type { VerifyResult } from "@/lib/database.types";
+
+const COOLDOWN_MS = 60_000;
 
 const bodySchema = z.object({ stepId: z.uuid() });
 const typeSchema = z.enum(["github", "vercel", "supabase"]);
@@ -33,7 +36,7 @@ export async function POST(
 
   const { data: step } = await supabase
     .from("steps")
-    .select("id, verify_type, projects!inner(status)")
+    .select("id, verify_type, verify_result, projects!inner(status)")
     .eq("id", bodyParsed.data.stepId)
     .maybeSingle();
   if (!step) {
@@ -49,6 +52,13 @@ export async function POST(
 
   // 관리자 클릭인지 의뢰인 클릭인지는 알림 정책에만 쓴다
   const { data: adminRow } = await supabase.from("admins").select("id").limit(1).maybeSingle();
+
+  // 의뢰인 연타 방어: 60초 안의 재클릭은 외부 API 를 다시 부르지 않고 마지막 결과를 돌려준다
+  const last = step.verify_result as VerifyResult | null;
+  if (!adminRow && last && Date.now() - new Date(last.checked_at).getTime() < COOLDOWN_MS) {
+    return NextResponse.json({ result: last, cooldown: true });
+  }
+
   const result = await runVerification(step.id, adminRow ? "admin" : "client");
   if (!result) {
     return NextResponse.json({ error: "failed to verify" }, { status: 500 });

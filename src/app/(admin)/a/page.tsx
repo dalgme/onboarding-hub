@@ -15,6 +15,7 @@ import {
   type RecentVerifyError,
 } from "@/app/(admin)/a/verify-health";
 import { TodoList } from "@/app/(admin)/a/todo-list";
+import { OutboxSection } from "@/app/(admin)/a/outbox-section";
 import { buildTodos, type TodoItem } from "@/lib/todo";
 import { reverifyStale } from "@/lib/verify/run";
 import { cn } from "@/lib/utils";
@@ -128,6 +129,10 @@ export default async function AdminDashboardPage() {
     <main className="flex flex-col gap-5">
       <Suspense fallback={<VerifyHealthFallback />}>
         <VerifyHealth recentErrors={recentErrors} />
+      </Suspense>
+
+      <Suspense fallback={null}>
+        <OutboxSection />
       </Suspense>
 
       <section className="rounded-lg border border-border bg-card px-4 py-3">

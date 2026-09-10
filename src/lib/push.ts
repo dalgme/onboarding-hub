@@ -9,6 +9,16 @@ export interface PushPayload {
   body: string;
   url: string;
   tag?: string;
+  // 장부 키. 서비스워커가 표시·클릭 시 /api/push/ack 로 돌려보내 「배달됨」을 남긴다
+  key?: string;
+  // 같은 topic 의 미배달 알림은 새 것으로 대체된다 (web-push Topic 헤더)
+  topic?: string;
+}
+
+export interface PushSendResult {
+  configured: boolean;
+  subscribers: number;
+  sent: number;
 }
 
 // 공개키는 브라우저 구독에도 쓰이므로 NEXT_PUBLIC_ 하나만 둔다.
@@ -35,8 +45,9 @@ function vapidSubject(): string {
   return site.startsWith("https://") ? site : "mailto:admin@example.com";
 }
 
-export async function notifyAdmin(payload: PushPayload): Promise<void> {
-  if (!pushConfigured()) return;
+export async function notifyAdmin(payload: PushPayload): Promise<PushSendResult> {
+  const result: PushSendResult = { configured: pushConfigured(), subscribers: 0, sent: 0 };
+  if (!result.configured) return result;
   try {
     webpush.setVapidDetails(
       vapidSubject(),
@@ -48,15 +59,19 @@ export async function notifyAdmin(payload: PushPayload): Promise<void> {
       .from("push_subscriptions")
       .select("id, endpoint, p256dh, auth");
 
+    result.subscribers = subs?.length ?? 0;
+    const { topic, ...body } = payload;
+
     await Promise.all(
       (subs ?? []).map(async (sub) => {
         try {
           await webpush.sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-            JSON.stringify(payload),
+            JSON.stringify(body),
             // 푸시 서비스가 응답을 멈추면 after() 작업이 함수 시간을 다 잡아먹는다
-            { TTL: 60 * 60, timeout: 5_000 },
+            { TTL: 60 * 60, timeout: 5_000, ...(topic ? { topic } : {}) },
           );
+          result.sent += 1;
         } catch (cause) {
           if (cause instanceof webpush.WebPushError) {
             if (isDeadSubscription(cause)) {
@@ -82,4 +97,5 @@ export async function notifyAdmin(payload: PushPayload): Promise<void> {
       message: cause instanceof Error ? cause.message : String(cause),
     });
   }
+  return result;
 }

@@ -1,4 +1,4 @@
-import { makeResult, type VerifyResult } from "@/lib/verify/types";
+import { FETCH_TIMEOUT_MS, makeResult, type VerifyResult } from "@/lib/verify/types";
 
 // 내 PAT로 "내가 이 조직의 active 멤버인가"를 확인한다.
 // GET /user/memberships/orgs/{org} — state가 active여야 verified.
@@ -27,6 +27,7 @@ export async function verifyGithubMembership(org: string): Promise<VerifyResult>
           "X-GitHub-Api-Version": "2022-11-28",
         },
         cache: "no-store",
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       },
     );
 

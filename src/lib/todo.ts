@@ -30,7 +30,7 @@ export type CommentLite = Pick<CommentRow, "author_side" | "read_at" | "deleted_
 export type GuestLite = Pick<ProjectGuestRow, "last_seen_at">;
 export type ProjectLite = Pick<
   ProjectRow,
-  "status" | "scope_md" | "scope_agreed_at" | "created_at"
+  "status" | "scope_md" | "scope_agreed_at" | "created_at" | "access_sent_at"
 >;
 
 const NOT_SEEN_AFTER_DAYS = 3;
@@ -99,8 +99,12 @@ export function buildTodos(
   }
   if (guests.length === 0) {
     items.push({ key: "noGuest", label: copy.noGuest, tab: "settings", urgent: true });
+  } else if (!project.access_sent_at && guests.every((guest) => !guest.last_seen_at)) {
+    // 접속 안내를 보낸 기록이 없고 아무도 들어온 적 없다 — 의뢰인은 아직 이 포털을 모른다
+    items.push({ key: "accessNotSent", label: copy.accessNotSent, tab: "settings", urgent: true });
   } else if (guests.every((guest) => !guest.last_seen_at)) {
-    const days = differenceInCalendarDays(now, new Date(project.created_at));
+    // 미접속 일수는 「보낸 날」부터 센다 (만든 날부터 세면 보내기 전부터 재촉한다)
+    const days = differenceInCalendarDays(now, new Date(project.access_sent_at ?? project.created_at));
     if (days >= NOT_SEEN_AFTER_DAYS) {
       items.push({ key: "notSeen", label: copy.notSeen(days), tab: "settings", urgent: false });
     }
