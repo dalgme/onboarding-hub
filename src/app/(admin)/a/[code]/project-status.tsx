@@ -39,7 +39,11 @@ export function ProjectStatus({
     .filter(
       (step) =>
         step.status === "client_done" &&
-        (step.verify_result?.code === "await_admin_first" || step.verify_result?.code === "await_admin_ack"),
+        (step.verify_result?.code === "await_admin_first" ||
+          step.verify_result?.code === "await_admin_ack" ||
+          // 원인 코드가 비어 있는 수동 초대 단계(이 기능 전에 접수된 완료 요청)도 2탭으로 받는다 —
+          // 안 그러면 단계 탭에서만 보이고 「왔음/안 왔음」을 누를 자리가 없다
+          (step.verify_type === "manual" && ADMIN_ACK_KEYS.has(step.key) && !step.verify_result?.code)),
     )
     .map((step) => ({
       stepId: step.id,

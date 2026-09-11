@@ -144,13 +144,22 @@ type StepLite = {
 
 const CLIENT_OPEN = new Set<StepStatus>(["todo", "doing", "blocked", "returned"]);
 
-// 온보딩 국면(첫 제작자 단계 앞)의 다음 열린 의뢰인 단계. 없으면 「의뢰인 쪽 작업은 여기까지」다
-function nextClientAfter(steps: StepLite[], current: StepLite | undefined): StepLite | null {
-  return (
-    onboardingClientSteps(steps).find(
-      (step) => CLIENT_OPEN.has(step.status) && (!current || step.order_index > current.order_index),
-    ) ?? null
+// 온보딩 국면(첫 제작자 단계 앞)에서 「지금 의뢰인이 할 다음 일」을 고른다.
+// 방금 확인한 단계보다 뒤를 먼저 보되, 없으면 앞쪽에 미뤄 둔 단계로 돌아간다 —
+// 단계를 순서대로 하지 않는 의뢰인이 흔하고, 4번이 끝났다고 2번이 사라지지 않는다.
+// 「여기까지입니다」는 남은 의뢰인 단계가 정말 하나도 없을 때만 말할 수 있다(§4-2).
+function nextClientWork(
+  steps: StepLite[],
+  current: StepLite | undefined,
+): { next: StepLite | null; pendingMine: boolean } {
+  const unfinished = onboardingClientSteps(steps).filter(
+    (step) => step.status !== "verified" && step.status !== "skipped",
   );
+  const clientTurn = unfinished.filter((step) => CLIENT_OPEN.has(step.status));
+  const next =
+    (current ? clientTurn.find((step) => step.order_index > current.order_index) : null) ?? clientTurn[0] ?? null;
+  // 남은 것이 전부 client_done 이면 공은 내 쪽에 있다 — 「개발을 시작합니다」가 아니라 「제가 확인 중」이다
+  return { next, pendingMine: next === null && unfinished.length > 0 };
 }
 
 // 연결이 확인됐다 → 「확인됐습니다 + 다음은 …」 문구. 푸시는 검증 쪽에서 이미 나갔다
@@ -179,7 +188,7 @@ export async function onStepVerified(
   );
   if (recentlySeen) return "skipped";
   const all = (steps ?? []) as StepLite[];
-  const next = nextClientAfter(all, all.find((row) => row.id === step.id));
+  const { next, pendingMine } = nextClientWork(all, all.find((row) => row.id === step.id));
   const outcome = await createOutbox({
     kind: "next_step",
     projectId: step.projectId,
@@ -192,6 +201,7 @@ export async function onStepVerified(
       client: step.clientName,
       stepTitle: step.title,
       nextTitle: next?.title ?? null,
+      pendingMine,
       portalUrl: portalUrl(step.projectCode),
     }),
     push: null,

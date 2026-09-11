@@ -405,11 +405,13 @@ export const ko = {
   // 원칙: 한 일은 먼저 인정, 바꿀 것은 하나, 원인은 화면 탓, 끝은 화면공유 제안. 8줄·300자 안팎, 링크 1개.
   // 금지어: 아직·안 하셨·빨리·지연·미완료·독촉·확인 바랍니다·되돌려짐·실패
   outbox: {
-    nextStep: (p: { client: string; stepTitle: string; nextTitle: string | null; portalUrl: string }) =>
+    nextStep: (p: { client: string; stepTitle: string; nextTitle: string | null; pendingMine: boolean; portalUrl: string }) =>
       `${p.client}님, 「${p.stepTitle}」 연결이 확인됐습니다. 감사합니다.\n` +
       (p.nextTitle
         ? `다음은 「${p.nextTitle}」입니다. 포털에서 바로 이어서 하실 수 있어요.\n${p.portalUrl}`
-        : `의뢰인 쪽 작업은 여기까지입니다. 이제 제가 개발을 시작합니다. 진행 상황은 포털에서 보실 수 있어요.\n${p.portalUrl}`),
+        : p.pendingMine
+          ? `남은 단계는 제가 확인하고 있습니다. 확인되는 대로 소식 드릴게요.\n${p.portalUrl}`
+          : `의뢰인 쪽 작업은 여기까지입니다. 이제 제가 개발을 시작합니다. 진행 상황은 포털에서 보실 수 있어요.\n${p.portalUrl}`),
     rerequestNoSlug: (p: { client: string; serviceName: string; orgNoun: string; stepTitle: string; portalUrl: string }) =>
       `${p.client}님, 「${p.stepTitle}」 완료 눌러 주신 것 확인했습니다.\n` +
       `한 가지만 더 — ${p.serviceName} ${p.orgNoun} 주소가 포털에 저장되지 않은 상태예요. ` +
