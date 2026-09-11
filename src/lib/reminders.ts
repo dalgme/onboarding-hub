@@ -2,8 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createOutbox, portalUrl } from "@/lib/outbox";
 import { minuteOf } from "@/lib/notify";
 import { CONNECT_META } from "@/lib/steps";
-import { ownerOf } from "@/lib/verify/types";
-import { onboardingClientSteps } from "@/lib/todo";
+import { onboardingClientSteps, reminderStopReason } from "@/lib/todo";
 import { ko } from "@/content/ko";
 import type { StepStatus, VerifyResult } from "@/lib/database.types";
 
@@ -22,7 +21,6 @@ import type { StepStatus, VerifyResult } from "@/lib/database.types";
 
 const FIRST_AFTER_MS = 3 * 24 * 60 * 60_000;
 const SECOND_AFTER_MS = 7 * 24 * 60 * 60_000;
-const QUIET_COMMENT_MS = 7 * 24 * 60 * 60_000;
 export const PAYMENT_STEP_KEYS: ReadonlySet<string> = new Set(["connect-vercel", "connect-anthropic"]);
 const CLIENT_OPEN: ReadonlySet<StepStatus> = new Set(["todo", "doing", "returned"]);
 
@@ -41,6 +39,7 @@ type StepLite = {
   owner_side: string;
   order_index: number;
   updated_at: string;
+  checked_at: string | null;
   verified_at: string | null;
   verify_result: VerifyResult | null;
 };
@@ -52,9 +51,26 @@ export function stallSince(
   project: { access_sent_at: string | null; remind_paused_until: string | null; created_at: string },
   lastClientCommentAt: string | null,
 ): string {
+  // 직전 의뢰인 단계는 확인된 것뿐 아니라 건너뛴 것도 센다 — 오늘 건너뛴 단계 때문에 다음 단계가
+  // 「7일째」로 계산되면 안 된다
   const previous = steps
-    .filter((item) => item.owner_side === "client" && item.order_index < step.order_index && item.verified_at)
+    .filter(
+      (item) =>
+        item.owner_side === "client" &&
+        item.order_index < step.order_index &&
+        (item.status === "verified" || item.status === "skipped"),
+    )
     .sort((a, b) => b.order_index - a.order_index)[0];
+  const lastClientMoveAt =
+    steps
+      .filter((item) => item.owner_side === "client")
+      .map((item) => item.checked_at)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) ?? null;
+  // 되돌림은 「공이 의뢰인에게 넘어간 시각」이 기준이다. 아직 아무도 손대지 않은 todo 단계는
+  // `updated_at` 을 쓰지 않는다 — 선택 단계 삽입처럼 내가 행을 건드리기만 해도 시계가 초기화되면
+  // 리마인드 기능 전체가 조용해진다(의뢰인이 실제로 움직인 시각은 아래 lastClientMoveAt 가 본다)
   const ownMove =
     step.status === "returned"
       ? (step.verify_result?.first_failed_at ?? step.updated_at)
@@ -64,7 +80,8 @@ export function stallSince(
   const candidates = [
     project.created_at,
     project.access_sent_at,
-    previous?.verified_at ?? null,
+    previous?.verified_at ?? previous?.updated_at ?? null,
+    lastClientMoveAt, // 의뢰인이 다른 단계에서 「완료했습니다」를 누른 시각 — 활동 중인 의뢰인을 재촉하지 않는다
     ownMove,
     lastClientCommentAt,
     project.remind_paused_until,
@@ -87,15 +104,14 @@ export async function remindStalled(now: Date): Promise<ReminderReport> {
   const admin = createAdminClient();
   const { data: projects } = await admin
     .from("projects")
-    .select("id, code, name, client_name, status, support_tier, access_sent_at, remind_paused_until, created_at")
+    .select("id, code, name, client_name, status, support_tier, scope_md, access_sent_at, remind_paused_until, created_at")
     .eq("status", "onboarding"); // (h)
   if (!projects || projects.length === 0) return report;
   const ids = projects.map((project) => project.id);
-  const since = new Date(now.getTime() - QUIET_COMMENT_MS).toISOString();
   const [{ data: steps }, { data: comments }, { data: guests }] = await Promise.all([
     admin
       .from("steps")
-      .select("id, project_id, key, title, status, owner_side, order_index, updated_at, verified_at, verify_result")
+      .select("id, project_id, key, title, status, owner_side, order_index, updated_at, checked_at, verified_at, verify_result")
       .in("project_id", ids),
     admin
       .from("comments")
@@ -106,38 +122,23 @@ export async function remindStalled(now: Date): Promise<ReminderReport> {
   ]);
 
   for (const project of projects) {
-    if (project.support_tier === "assisted") { skip("assisted"); continue; }
-    if (project.remind_paused_until && project.remind_paused_until > now.toISOString()) { skip("paused"); continue; }
     const mine = ((steps ?? []) as (StepLite & { project_id: string })[]).filter((step) => step.project_id === project.id);
-    if (mine.some((step) => step.status === "blocked")) { skip("blocked"); continue; }
-    if (mine.some((step) => step.verify_result?.status === "error" && ownerOf(step.verify_result) === "admin")) { skip("admin_error"); continue; }
-    if (
-      mine.some(
-        (step) =>
-          step.status === "client_done" &&
-          ownerOf(step.verify_result) === "admin" &&
-          step.verify_result?.admin_first_ack !== "not_came",
-      )
-    ) { skip("my_turn"); continue; }
-    const recent = (comments ?? []).filter(
-      (comment) =>
-        comment.project_id === project.id &&
-        ((comment.author_side === "client" && comment.created_at > since) ||
-          (comment.author_side === "client" && !comment.read_at)),
+    const mineComments = (comments ?? []).filter(
+      (comment) => comment.project_id === project.id && comment.author_side === "client",
     );
-    if (recent.length > 0) { skip("recent_comment"); continue; }
+    // 정지 조건 a~h — 거둠(sweepOutbox)과 같은 함수를 읽는다
+    const stop = reminderStopReason(project, mine, mineComments, now);
+    if (stop) { skip(stop); continue; }
     const seen = (guests ?? []).some((guest) => guest.project_id === project.id && guest.last_seen_at);
     if (!seen) { skip("never_seen"); continue; }
 
     const next = onboardingClientSteps(mine).find((step) => CLIENT_OPEN.has(step.status));
     if (!next) { skip("no_open_step"); continue; }
     if (PAYMENT_STEP_KEYS.has(next.key)) { skip("payment_step"); continue; }
+    // 범위 문서를 내가 아직 쓰지 않았다 — 의뢰인이 「작업 범위 확인」에서 할 수 있는 일이 없다
+    if (next.key === "scope-review" && !project.scope_md?.trim()) { skip("scope_missing"); continue; }
 
-    const lastClientComment = (comments ?? [])
-      .filter((comment) => comment.project_id === project.id && comment.author_side === "client")
-      .map((comment) => comment.created_at)
-      .sort()
-      .at(-1) ?? null;
+    const lastClientComment = mineComments.map((comment) => comment.created_at).sort().at(-1) ?? null;
     const anchor = stallSince(next, mine, project, lastClientComment);
     const stalled = now.getTime() - new Date(anchor).getTime();
     const round = stalled >= SECOND_AFTER_MS ? 2 : stalled >= FIRST_AFTER_MS ? 1 : 0;

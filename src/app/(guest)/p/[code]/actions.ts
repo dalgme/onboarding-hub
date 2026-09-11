@@ -155,7 +155,7 @@ export async function saveOrgSlug(
     .select("id")
     .eq("project_id", projectId)
     .eq("key", stepKey)
-    .eq("status", "client_done")
+    .in("status", ["client_done", "returned"])
     .maybeSingle();
   if (doneStep) await runVerification(doneStep.id, "auto").catch(() => null);
 

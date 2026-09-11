@@ -106,7 +106,7 @@ function withSchedule(
     result.code !== "pending_accept" &&
     !(trigger === "client" && countsAsAttempt)
   ) {
-    result = { ...result, admin_first_ack: previous.admin_first_ack };
+    result = { ...result, admin_first_ack: previous.admin_first_ack, admin_first_ack_at: previous.admin_first_ack_at };
   }
   // 최초 실패 시각은 「같은 원인이 이어지는 동안」 유지한다. 중간에 낀 일시 오류(error)는
   // 원인을 바꾸지 않으므로 리셋하지 않는다 — 리셋되면 재요청 카드가 새 키로 다시 만들어진다
@@ -154,7 +154,7 @@ export async function runVerification(
   const returnNow = step.status === "client_done" && RETURN_NOW.has(result.code ?? "");
   // 되돌린 뒤 원인이 내 쪽으로 넘어왔으면(초대가 보이기 시작함·내 메일함 차례) 「한 가지만 더」를 거둔다.
   // 일시 오류(system)로는 오가지 않는다 — 포털이 깜빡이면 안 된다
-  const unreturn = step.status === "returned" && result.status !== "verified" && ownerOf(result) === "admin";
+  const unreturn = step.status === "returned" && result.status === "not_found" && ownerOf(result) === "admin";
   const update =
     result.status === "verified"
       ? { verify_result: result, status: "verified" as const, verified_at: result.checked_at }
@@ -166,6 +166,9 @@ export async function runVerification(
   // CAS: 내가 읽은 결과 위에만 쓴다. tick·화면 열림·의뢰인 클릭이 같은 단계를 동시에
   // 돌 수 있다 — 0행이면 다른 실행이 이긴 것이므로 알림·전이도 그쪽 몫이다
   let query = admin.from("steps").update(update).eq("id", step.id);
+  // 상태를 바꾸는 쓰기는 읽은 시점의 상태도 함께 고정한다 — API 호출(최대 8초) 사이에 의뢰인이
+  // 「막혔어요」를 누르거나 내가 「확인 완료로」를 눌렀으면 그쪽이 이긴다
+  if ("status" in update) query = query.eq("status", step.status);
   query = step.verify_result?.checked_at
     ? query.filter("verify_result->>checked_at", "eq", step.verify_result.checked_at)
     : query.is("verify_result", null);

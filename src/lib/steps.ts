@@ -147,6 +147,17 @@ export const OPTIONAL_STEP_TEMPLATES: StepTemplate[] = [
   },
 ];
 
+// 선택 단계(Resend·Solapi)는 첫 제작자 단계(개발 진행) 앞에 들어간다 — 끝에 붙이면 순서 기반
+// 자동화(다음 단계 안내·상태 전이·리마인드)가 인수인계 뒤에 온 연결 단계를 못 본다.
+// 생성 액션과 새 프로젝트 화면의 미리보기가 이 함수 하나를 같이 읽는다
+export function plannedSteps(optionalKeys: string[]): StepTemplate[] {
+  const optional = OPTIONAL_STEP_TEMPLATES.filter((template) => optionalKeys.includes(template.key));
+  const firstAgency = STEP_TEMPLATE.findIndex((template) => template.owner_side === "agency");
+  return firstAgency < 0
+    ? [...STEP_TEMPLATE, ...optional]
+    : [...STEP_TEMPLATE.slice(0, firstAgency), ...optional, ...STEP_TEMPLATE.slice(firstAgency)];
+}
+
 export const STEP_TEMPLATE: StepTemplate[] = [
   {
     key: "connect-github",

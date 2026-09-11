@@ -98,12 +98,13 @@ export async function onScopeAgreed(project: { id: string; code: string; client_
 // 링크 고정 → 「중간 확인 주소가 생겼습니다」 문구
 export async function onLinkPinned(
   project: { id: string; code: string; client_name: string },
-  link: { label: string; url: string },
+  link: { id: string; label: string; url: string },
 ): Promise<void> {
   await createOutbox({
     kind: "link_pinned",
     projectId: project.id,
-    dedupeKey: `link_pinned:${project.id}:${minuteOf(new Date())}`,
+    // 링크마다 다른 주소를 안내한다 — 같은 분에 두 개를 고정해도 두 번째가 조용히 사라지지 않게 링크 id 를 키에 넣는다
+    dedupeKey: `link_pinned:${link.id}:${minuteOf(new Date())}`,
     title: ko.outbox.titles.linkPinned(link.label),
     body: ko.outbox.linkPinned({ client: project.client_name, label: link.label, url: link.url, portalUrl: portalUrl(project.code) }),
     push: null,

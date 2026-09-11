@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { onboardingClientSteps } from "@/lib/todo";
+import { onboardingClientSteps, reminderStopReason } from "@/lib/todo";
 import { pushAdmin, dayKst, minuteOf } from "@/lib/notify";
 import { CONNECT_META, SIMPLE_CONNECT_META } from "@/lib/steps";
 import { ko } from "@/content/ko";
@@ -123,6 +123,13 @@ export async function createOutbox(input: OutboxCreate): Promise<"created" | "du
     return "failed";
   }
 }
+
+type ProjectLite = {
+  id: string;
+  status: string;
+  support_tier: string;
+  remind_paused_until: string | null;
+};
 
 type StepLite = {
   id: string;
@@ -323,10 +330,17 @@ export async function sweepOutbox(
     .filter((row) => row.kind === "admin_replied")
     .map((row) => row.dedupe_key.replace(/^admin_replied:/, ""));
 
-  const [{ data: projects }, { data: steps }, { data: guests }, { data: comments }] = await Promise.all([
+  const reminderProjectIds = [
+    ...new Set(pending.filter((row) => row.kind === "reminder").map((row) => row.project_id).filter((v): v is string => Boolean(v))),
+  ];
+
+  const [{ data: projects }, { data: steps }, { data: guests }, { data: comments }, { data: clientComments }] = await Promise.all([
     projectIds.length
-      ? admin.from("projects").select("id, status").in("id", projectIds)
-      : Promise.resolve({ data: [] as { id: string; status: string }[] }),
+      ? admin
+          .from("projects")
+          .select("id, status, support_tier, remind_paused_until")
+          .in("id", projectIds)
+      : Promise.resolve({ data: [] as ProjectLite[] }),
     projectIds.length
       ? admin
           .from("steps")
@@ -339,8 +353,24 @@ export async function sweepOutbox(
     commentIds.length
       ? admin.from("comments").select("id, read_at").in("id", commentIds)
       : Promise.resolve({ data: [] as { id: string; read_at: string | null }[] }),
+    // 리마인드 카드는 「지금도 필요한가」를 만들 때와 같은 규칙으로 다시 본다 — 의뢰인 코멘트가 필요하다
+    reminderProjectIds.length
+      ? admin
+          .from("comments")
+          .select("project_id, read_at, created_at")
+          .in("project_id", reminderProjectIds)
+          .eq("author_side", "client")
+          .is("deleted_at", null)
+      : Promise.resolve({ data: [] as { project_id: string; read_at: string | null; created_at: string }[] }),
   ]);
+  const projectById = new Map((projects ?? []).map((row) => [row.id, row as ProjectLite]));
   const projectStatus = new Map((projects ?? []).map((row) => [row.id, row.status]));
+  const clientCommentsByProject = new Map<string, { read_at: string | null; created_at: string }[]>();
+  for (const comment of clientComments ?? []) {
+    const list = clientCommentsByProject.get(comment.project_id) ?? [];
+    list.push(comment);
+    clientCommentsByProject.set(comment.project_id, list);
+  }
   const stepsByProject = new Map<string, StepLite[]>();
   for (const step of (steps ?? []) as StepLite[] & { project_id: string }[]) {
     const list = stepsByProject.get(step.project_id) ?? [];
@@ -390,7 +420,14 @@ export async function sweepOutbox(
       // returned 는 tick 이 다시 확인하며 updated_at 을 밀므로 「원인 사이클 시작」(first_failed_at)으로 본다
       const movedAt = step?.status === "returned" ? (step.verify_result?.first_failed_at ?? "") : (step?.updated_at ?? "");
       const moved = !step || !CLIENT_OPEN.has(step.status) || movedAt > row.created_at;
-      needed = !moved;
+      // 카드를 만든 뒤 정지 조건이 생겼을 수도 있다(질문·막힘·보류·내 차례) — 만들 때와 같은 함수로 다시 본다.
+      // 접속(last_seen_at)은 작성 조건이 아니라 거둠 전용이다: 들어와서 봤으면 재촉 문구를 보낼 이유가 없다
+      const projectRow = projectById.get(row.project_id);
+      const stopped = projectRow
+        ? reminderStopReason(projectRow, projectSteps, clientCommentsByProject.get(row.project_id) ?? [], now)
+        : "gone";
+      const seen = lastSeenByProject.get(row.project_id);
+      needed = !moved && !stopped && !(seen && seen > row.created_at);
     }
     if (!needed) clearedIds.push(row.id);
   }

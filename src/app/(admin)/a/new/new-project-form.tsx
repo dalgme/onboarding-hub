@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { createProject } from "@/app/(admin)/a/actions";
-import { OPTIONAL_STEP_TEMPLATES, STEP_TEMPLATE } from "@/lib/steps";
+import { OPTIONAL_STEP_TEMPLATES, plannedSteps } from "@/lib/steps";
 import { ko } from "@/content/ko";
 
 const newProjectSchema = z.object({
@@ -43,18 +43,11 @@ export function NewProjectForm() {
   const includeAi = watch("includeAi");
   const optionalKeys = watch("optionalKeys") ?? [];
   // 미리보기 — 생성되면 이 순서로 단계가 채워진다
-  const preview = [
-    ...STEP_TEMPLATE.map((template) => ({
-      key: template.key,
-      title: template.title,
-      skipped: !includeAi && template.key === "connect-anthropic",
-    })),
-    ...OPTIONAL_STEP_TEMPLATES.filter((template) => optionalKeys.includes(template.key)).map((template) => ({
-      key: template.key,
-      title: template.title,
-      skipped: false,
-    })),
-  ];
+  const preview = plannedSteps(optionalKeys).map((template) => ({
+    key: template.key,
+    title: template.title,
+    skipped: !includeAi && template.key === "connect-anthropic",
+  }));
 
   async function onSubmit(values: NewProjectValues) {
     setServerError(null);

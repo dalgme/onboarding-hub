@@ -148,7 +148,9 @@ export default async function PortalHomePage({
                 {nextStep.status === "returned" ? (
                   <p className="text-sm leading-relaxed text-muted-foreground">
                     <span className="font-medium text-foreground">{ko.stepDetail.returnedTitle} </span>
-                    {(nextStep.verify_result?.code && ko.stepDetail.verifyCode[nextStep.verify_result.code]) ??
+                    {(nextStep.verify_result?.code &&
+                      (ko.stepDetail.verifyCodeHome[nextStep.verify_result.code] ??
+                        ko.stepDetail.verifyCode[nextStep.verify_result.code])) ??
                       ko.stepDetail.returnedFallback}
                   </p>
                 ) : null}

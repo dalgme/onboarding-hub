@@ -7,7 +7,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminUser } from "@/lib/auth";
-import { OPTIONAL_STEP_TEMPLATES, STEP_TEMPLATE } from "@/lib/steps";
+import { OPTIONAL_STEP_TEMPLATES, plannedSteps } from "@/lib/steps";
 import { normalizeSlug } from "@/lib/slug";
 import { buildMagicLinkUrl } from "@/lib/magic-link";
 import { preflightBlockReason } from "@/lib/preflight";
@@ -78,12 +78,7 @@ export async function createProject(
   }
 
   // 온보딩 단계를 템플릿에서 복사해 채운다 (+ 고른 선택 단계, AI 없으면 Anthropic 은 건너뜀)
-  const optional = OPTIONAL_STEP_TEMPLATES.filter((template) => optionalKeys.includes(template.key));
-  const firstAgencyIndex = STEP_TEMPLATE.findIndex((template) => template.owner_side === "agency");
-  const templates =
-    firstAgencyIndex < 0
-      ? [...STEP_TEMPLATE, ...optional]
-      : [...STEP_TEMPLATE.slice(0, firstAgencyIndex), ...optional, ...STEP_TEMPLATE.slice(firstAgencyIndex)];
+  const templates = plannedSteps(optionalKeys);
   const { error: stepsError } = await supabase.from("steps").insert(
     templates.map((template, index) => ({
       project_id: project.id,
@@ -159,12 +154,22 @@ export async function updateProject(
   const oldEmail = before?.client_email?.toLowerCase();
   const newEmail = data.clientEmail.toLowerCase();
   if (oldEmail && oldEmail !== newEmail) {
-    await supabase
+    const { error: guestError } = await supabase
       .from("project_guests")
       .update({ email: newEmail })
       .eq("project_id", data.projectId)
       .eq("email", oldEmail)
       .is("last_seen_at", null);
+    // 새 이메일이 이미 접근 목록에 있으면(먼저 게스트로 추가해 둔 경우) 옛 행만 지운다 —
+    // 남겨 두면 종료 때 회수해야 할 접근이 조용히 하나 더 생긴다
+    if (guestError?.code === "23505") {
+      await supabase
+        .from("project_guests")
+        .delete()
+        .eq("project_id", data.projectId)
+        .eq("email", oldEmail)
+        .is("last_seen_at", null);
+    }
   }
   revalidateProject(data.code);
   return { ok: true };
@@ -243,7 +248,7 @@ export async function adminSetStepStatus(
       verify_result: status === "todo" ? null : undefined,
     })
     .eq("id", stepId)
-    .select("id, key, title, project_id, projects(id, code, name, client_name)")
+    .select("id, key, title, owner_side, order_index, project_id, projects(id, code, name, client_name)")
     .maybeSingle();
 
   if (error) return { ok: false, message: ko.common.error };
@@ -251,6 +256,9 @@ export async function adminSetStepStatus(
   // 내가 손으로 「확인 완료로」 누른 것도 확인이다 — 「확인됐습니다 + 다음은 …」 문구를 똑같이 올린다
   const project = (updated?.projects ?? null) as { id: string; code: string; name: string; client_name: string } | null;
   if ((status === "verified" || status === "skipped") && updated && project) {
+    // 「연결이 확인됐습니다 · 다음은 …」은 의뢰인이 한 일에 대한 답이다 — 내 단계(개발·인수인계)를
+    // 확인 완료로 바꾼 것에 의뢰인에게 보낼 말은 없다
+    const isClientStep = updated.owner_side === "client";
     const stepInfo = {
       id: updated.id,
       key: updated.key,
@@ -261,7 +269,7 @@ export async function adminSetStepStatus(
       clientName: project.client_name,
     };
     after(async () => {
-      if (status === "verified") await onStepVerified(stepInfo, now, "admin");
+      if (status === "verified" && isClientStep) await onStepVerified(stepInfo, now, "admin");
       await advanceProjectStatus(project.id);
     });
   }
@@ -345,19 +353,24 @@ export async function addLink(
     .select("id", { count: "exact", head: true })
     .eq("project_id", projectId);
 
-  const { error } = await supabase.from("links").insert({
-    project_id: projectId,
-    order_index: count ?? 0,
-    label,
-    url,
-    is_pinned: isPinned,
-  });
+  const { data: inserted, error } = await supabase
+    .from("links")
+    .insert({
+      project_id: projectId,
+      order_index: count ?? 0,
+      label,
+      url,
+      is_pinned: isPinned,
+    })
+    .select("id")
+    .maybeSingle();
   if (error) return { ok: false, message: ko.common.error };
-  if (isPinned) {
+  if (isPinned && inserted) {
     const { data: project } = await supabase.from("projects").select("client_name").eq("id", projectId).maybeSingle();
     if (project) {
       const info = { id: projectId, code, client_name: project.client_name };
-      after(() => onLinkPinned(info, { label, url }));
+      const linkId = inserted.id;
+      after(() => onLinkPinned(info, { id: linkId, label, url }));
     }
   }
   revalidateProject(code);
@@ -402,14 +415,14 @@ export async function toggleLinkPin(
     .from("links")
     .update({ is_pinned: parsed.data.isPinned })
     .eq("id", parsed.data.linkId)
-    .select("label, url, project_id, projects(client_name)")
+    .select("id, label, url, project_id, projects(client_name)")
     .maybeSingle();
   if (error) return { ok: false, message: ko.common.error };
   // 고정을 켰다 = 의뢰인이 볼 주소가 생겼다 — 안내 문구
-  const row = link as unknown as { label: string; url: string; project_id: string; projects: { client_name: string } | null } | null;
+  const row = link as unknown as { id: string; label: string; url: string; project_id: string; projects: { client_name: string } | null } | null;
   if (parsed.data.isPinned && row?.projects) {
     const info = { id: row.project_id, code: parsed.data.code, client_name: row.projects.client_name };
-    const target = { label: row.label, url: row.url };
+    const target = { id: row.id, label: row.label, url: row.url };
     after(() => onLinkPinned(info, target));
   }
   revalidateProject(parsed.data.code);
@@ -906,7 +919,13 @@ export async function ackInvite(
     // API 단계: 「왔음·수락했음」이면 지금 확인한다. 아직이면 백오프를 처음으로 되돌려 5분 뒤 tick 이 다시 본다
     await admin
       .from("steps")
-      .update({ verify_result: { ...(row.verify_result ?? classify("await_admin_first")), admin_first_ack: "came" } })
+      .update({
+        verify_result: {
+          ...(row.verify_result ?? classify("await_admin_first")),
+          admin_first_ack: "came",
+          admin_first_ack_at: now.toISOString(),
+        },
+      })
       .eq("id", row.id);
     const result = await runVerification(row.id, "admin");
     if (result && result.status !== "verified") {
@@ -916,6 +935,7 @@ export async function ackInvite(
           verify_result: {
             ...result,
             admin_first_ack: "came",
+            admin_first_ack_at: now.toISOString(),
             auto_checks: 0,
             next_check_at: new Date(now.getTime() + 5 * 60_000).toISOString(),
           },
@@ -933,7 +953,8 @@ export async function ackInvite(
   const base = row.verify_result ?? classify(row.verify_type === "manual" ? "await_admin_ack" : "await_admin_first");
   const next = {
     ...classify("check_invite", base.detail),
-    first_failed_at: base.first_failed_at ?? now.toISOString(),
+    // 되돌림은 새 원인 사이클이다 — 옛 시각을 유지하면 재요청 카드가 만들어지자마자 리마인드가 덮어쓴다
+    first_failed_at: now.toISOString(),
     client_attempts: base.client_attempts,
     auto_checks: base.auto_checks,
     admin_first_ack: "not_came" as const,

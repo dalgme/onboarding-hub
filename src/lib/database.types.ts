@@ -24,6 +24,8 @@ export type VerifyResult = {
   owner?: "client" | "admin" | "system";
   // Vercel·Supabase·수동 단계: 내가 메일함을 보고 누른 결과
   admin_first_ack?: "came" | "not_came";
+  admin_first_ack_at?: string; // 「왔음·수락했음」을 누른 시각 — 「수락했는데 안 보임」 판정의 기준
+
   // 백오프 재확인용. 의뢰인 클릭 횟수(막힘 판정의 유일한 분모)와 자동 재확인 횟수를 따로 센다
   client_attempts?: number;
   auto_checks?: number;

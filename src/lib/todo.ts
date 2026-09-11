@@ -4,6 +4,7 @@ import { ownerOf, isVerifyCode } from "@/lib/verify/types";
 import { differenceInHours } from "date-fns";
 import { ko } from "@/content/ko";
 import type {
+  VerifyResult,
   CommentRow,
   ProjectGuestRow,
   ProjectRow,
@@ -94,7 +95,8 @@ export function buildTodos(
     } else if (code === "await_admin_first" || code === "await_admin_ack") {
       if (result?.admin_first_ack === "came") {
         // 수락했는데 1시간 넘게 API 에 안 보이면 팀 주소가 틀렸을 가능성이 크다 — 급한 칩으로
-        const hours = differenceInHours(now, new Date(result.checked_at));
+        // 기준은 「수락했음」을 누른 시각이다 — checked_at 은 자동 재확인마다 밀려 칩이 깜빡인다
+        const hours = differenceInHours(now, new Date(result.admin_first_ack_at ?? result.first_failed_at ?? result.checked_at));
         items.push(
           hours >= 1
             ? { key: `invite-${step.key}`, label: copy.acceptedNotVisible(service, hours), tab: "steps", urgent: true }
@@ -158,6 +160,40 @@ const CLIENT_OPEN: ReadonlySet<StepRow["status"]> = new Set(["todo", "doing", "b
 // 온보딩 국면의 의뢰인 단계 = 첫 제작자(agency) 단계보다 앞에 있는 의뢰인 단계.
 // 기본 템플릿의 「도메인 연결」은 「개발 진행」 뒤라 여기 들어가지 않는다 — 상태 전이·리마인드·
 // 「다음 단계」 문구가 전부 이 하나의 집합을 읽는다
+// 리마인드 정지 조건 (설계 §4-4 a~h) — 문구를 「만들 때」와 pending 카드를 「거둘 때」가 같은 규칙을 읽는다.
+// 하나라도 참이면 그 프로젝트에 리마인드 문구는 없다. 이유 문자열은 tick 보고용.
+const REMINDER_QUIET_COMMENT_MS = 7 * 24 * 60 * 60_000;
+
+export function reminderStopReason(
+  project: { status: string; support_tier: string; remind_paused_until: string | null },
+  steps: { status: string; verify_result?: VerifyResult | null }[],
+  clientComments: { read_at: string | null; created_at: string }[],
+  now: Date,
+): string | null {
+  if (project.status !== "onboarding") return "not_onboarding"; // (a)(h) 종료·개발 시작 뒤에는 재촉하지 않는다
+  if (project.support_tier === "assisted") return "assisted"; // (b) 화면공유로 함께 한다
+  if (project.remind_paused_until && project.remind_paused_until > now.toISOString()) return "paused"; // (g)
+  // 끝난 단계의 낡은 결과는 보지 않는다 — 그러면 한 번의 토큰 오류가 영원히 리마인드를 막는다
+  const open = steps.filter((step) => step.status !== "verified" && step.status !== "skipped");
+  if (open.some((step) => step.status === "blocked")) return "blocked"; // (c)
+  if (open.some((step) => step.verify_result?.status === "error" && ownerOf(step.verify_result ?? null) === "admin")) {
+    return "admin_error"; // (d) 내 쪽 오류를 의뢰인에게 재촉으로 돌리지 않는다
+  }
+  if (
+    open.some(
+      (step) =>
+        step.status === "client_done" &&
+        ownerOf(step.verify_result ?? null) === "admin" &&
+        step.verify_result?.admin_first_ack !== "not_came",
+    )
+  ) {
+    return "my_turn"; // (e) 내가 먼저 움직여야 한다
+  }
+  const since = new Date(now.getTime() - REMINDER_QUIET_COMMENT_MS).toISOString();
+  if (clientComments.some((comment) => comment.created_at > since || !comment.read_at)) return "recent_comment"; // (f)
+  return null;
+}
+
 export function onboardingClientSteps<T extends { owner_side: string; order_index: number }>(steps: T[]): T[] {
   const firstAgency = steps
     .filter((step) => step.owner_side === "agency")
