@@ -21,6 +21,12 @@ export async function GET(request: NextRequest) {
   if (!authorized(request)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const report = await runTick(new Date());
+  // 시각 주입은 로컬 검수 전용(프로덕션에서는 무시) — 리마인드 창·09:00 요약처럼 시각에 매인 판정을 재현한다
+  const override = request.nextUrl.searchParams.get("now");
+  const now =
+    process.env.NODE_ENV !== "production" && override && !Number.isNaN(Date.parse(override))
+      ? new Date(override)
+      : new Date();
+  const report = await runTick(now);
   return NextResponse.json(report);
 }

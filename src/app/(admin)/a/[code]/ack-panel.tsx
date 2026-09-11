@@ -46,6 +46,13 @@ export function AckPanel({ items, code }: { items: AckItem[]; code: string }) {
             <span className="text-xs text-muted-foreground">
               {item.came ? copy.acceptedWaiting : item.notCame ? copy.waitingClient : copy.waiting(item.hoursWaiting)}
             </span>
+            {item.came ? (
+              <span className="ml-auto flex gap-1.5">
+                <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => act(item.stepId, false)}>
+                  {copy.cameNotVisible}
+                </Button>
+              </span>
+            ) : null}
             {!item.came ? (
               <span className="ml-auto flex gap-1.5">
                 <Button type="button" size="sm" disabled={pending} onClick={() => act(item.stepId, true)}>

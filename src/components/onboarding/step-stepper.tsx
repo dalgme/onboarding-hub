@@ -19,6 +19,8 @@ function StepIcon({ status }: { status: StepRow["status"] }) {
       return <Check className={cn(base, "text-success")} />;
     case "blocked":
       return <CircleAlert className={cn(base, "text-destructive")} />;
+    case "returned":
+      return <CircleAlert className={cn(base, "text-warning")} />;
     case "doing":
     case "client_done":
       return <CircleDot className={cn(base, "text-primary")} />;

@@ -9,7 +9,8 @@ export function calcProgress(
   if (counted.length === 0) return 0;
   const score = counted.reduce((sum, step) => {
     if (step.status === "verified") return sum + 1;
-    if (step.status === "client_done") return sum + 0.5;
+    // returned(한 가지만 더)도 0.5 — 한 일은 인정하고 남은 한 가지만 가리킨다
+    if (step.status === "client_done" || step.status === "returned") return sum + 0.5;
     return sum;
   }, 0);
   return (score / counted.length) * 100;

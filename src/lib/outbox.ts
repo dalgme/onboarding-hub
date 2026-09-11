@@ -1,8 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { onboardingClientSteps } from "@/lib/todo";
 import { pushAdmin, dayKst, minuteOf } from "@/lib/notify";
 import { CONNECT_META, SIMPLE_CONNECT_META } from "@/lib/steps";
 import { ko } from "@/content/ko";
 import { redact } from "@/lib/redact";
+import { returnStep, runVerification } from "@/lib/verify/run";
 import type { NoticeKind, NoticeRow, StepStatus, VerifyResult } from "@/lib/database.types";
 
 // 「보낼 카톡」 — 의뢰인에게 전할 말을 시스템이 완성 문구로 써서 장부(notices,
@@ -42,7 +44,7 @@ export type OutboxItem = NoticeRow & {
   projects: { code: string; name: string; client_name: string } | null;
 };
 
-const RERQUEST_AFTER_MS = 2 * 60 * 60_000; // GitHub check_invite 가 2시간 지속되면 재요청 문구
+const RERQUEST_AFTER_MS = 2 * 60 * 60_000; // GitHub check_invite 가 2시간 지속되면 「한 가지만 더」 + 재요청 문구
 const STALE_AFTER_MS = 4 * 60 * 60_000;
 const RECENT_WINDOW_MS = 24 * 60 * 60_000;
 const ONLINE_WINDOW_MS = 15 * 60_000; // 이 안에 포털을 봤으면 「지금 보고 있다」로 친다
@@ -66,11 +68,13 @@ export async function createOutbox(input: OutboxCreate): Promise<"created" | "du
     // 같은 주제의 pending 은 대체한다 (일일 상한 인덱스와 충돌하지 않게 삽입 전에).
     // 답글 알림은 답글마다 별개다 — 앞선 답글 본문을 지우지 않는다
     if (input.kind !== "admin_replied") {
+      // 재요청과 리마인드는 「같은 단계에 카드 1장」 — 종류가 달라도 서로 대체한다
+      const kinds: NoticeKind[] = input.kind === "rerequest" || input.kind === "reminder" ? ["rerequest", "reminder"] : [input.kind];
       let supersede = admin
         .from("notices")
         .update({ status: "superseded" })
         .eq("project_id", input.projectId)
-        .eq("kind", input.kind)
+        .in("kind", kinds)
         .eq("channel", "outbox")
         .eq("status", "pending")
         .neq("dedupe_key", input.dedupeKey);
@@ -128,18 +132,16 @@ type StepLite = {
   owner_side: string;
   order_index: number;
   verify_result?: VerifyResult | null;
+  updated_at?: string;
 };
 
-const CLIENT_OPEN = new Set<StepStatus>(["todo", "doing", "blocked"]);
+const CLIENT_OPEN = new Set<StepStatus>(["todo", "doing", "blocked", "returned"]);
 
+// 온보딩 국면(첫 제작자 단계 앞)의 다음 열린 의뢰인 단계. 없으면 「의뢰인 쪽 작업은 여기까지」다
 function nextClientAfter(steps: StepLite[], current: StepLite | undefined): StepLite | null {
-  const ordered = [...steps].sort((a, b) => a.order_index - b.order_index);
   return (
-    ordered.find(
-      (step) =>
-        step.owner_side === "client" &&
-        CLIENT_OPEN.has(step.status) &&
-        (!current || step.order_index > current.order_index),
+    onboardingClientSteps(steps).find(
+      (step) => CLIENT_OPEN.has(step.status) && (!current || step.order_index > current.order_index),
     ) ?? null
   );
 }
@@ -149,10 +151,10 @@ export async function onStepVerified(
   step: StepInfo,
   verifiedAt: string,
   trigger: "client" | "admin" | "auto",
-): Promise<void> {
+): Promise<"created" | "skipped"> {
   // 의뢰인이 방금 「완료했습니다」를 눌러 그 자리에서 확인된 것이다 — 포털이 이미
   // 「확인됐습니다·다음」을 보여주고 있다. 카톡 문구를 만들 이유가 없다
-  if (trigger === "client") return;
+  if (trigger === "client") return "skipped";
   const admin = createAdminClient();
   const [{ data: project }, { data: steps }, { data: guests }] = await Promise.all([
     admin.from("projects").select("status").eq("id", step.projectId).maybeSingle(),
@@ -162,16 +164,16 @@ export async function onStepVerified(
       .eq("project_id", step.projectId),
     admin.from("project_guests").select("last_seen_at").eq("project_id", step.projectId),
   ]);
-  if (!project || project.status === "closed") return;
+  if (!project || project.status === "closed") return "skipped";
   // 의뢰인이 지금 포털에 있다(방금 「완료했습니다」를 눌렀다) — 포털이 이미 「확인됐습니다·다음」을
   // 보여준다. 카드를 만들었다가 다음 tick 에 거두는 사이 내가 보내는 일을 만들지 않는다
   const recentlySeen = (guests ?? []).some(
     (guest) => guest.last_seen_at && Date.now() - new Date(guest.last_seen_at).getTime() < ONLINE_WINDOW_MS,
   );
-  if (recentlySeen) return;
+  if (recentlySeen) return "skipped";
   const all = (steps ?? []) as StepLite[];
   const next = nextClientAfter(all, all.find((row) => row.id === step.id));
-  await createOutbox({
+  const outcome = await createOutbox({
     kind: "next_step",
     projectId: step.projectId,
     stepId: step.id,
@@ -187,6 +189,7 @@ export async function onStepVerified(
     }),
     push: null,
   });
+  return outcome === "created" ? "created" : "skipped";
 }
 
 // 의뢰인 원인이 확정된 결과 → 재요청 문구. 지금은 GitHub no_slug 만 즉시,
@@ -327,7 +330,7 @@ export async function sweepOutbox(
     projectIds.length
       ? admin
           .from("steps")
-          .select("id, project_id, key, title, status, owner_side, order_index, verify_result")
+          .select("id, project_id, key, title, status, owner_side, order_index, verify_result, updated_at")
           .in("project_id", projectIds)
       : Promise.resolve({ data: [] as { id: string; project_id: string; key: string; title: string; status: StepStatus; owner_side: string; order_index: number; verify_result: VerifyResult | null }[] }),
     projectIds.length
@@ -357,7 +360,8 @@ export async function sweepOutbox(
   for (const row of pending) {
     if (!row.project_id) continue;
     const status = projectStatus.get(row.project_id);
-    if (!status || status === "closed") {
+    if (!status || (status === "closed" && row.kind !== "closed")) {
+      // 종료 프로젝트는 전 종류 거둠 — 단, 「전달 완료 안내」는 종료 순서 6번(접근 회수 뒤)에 보내는 문구라 남긴다
       clearedIds.push(row.id);
       continue;
     }
@@ -375,10 +379,18 @@ export async function sweepOutbox(
       // 일시 오류(system)가 코드를 잠깐 덮어써도 카드는 거두지 않는다 — 원인이 사라진 것이 아니다
       const current = step?.verify_result;
       const transient = current?.owner === "system" || (current?.status === "error" && !current.owner);
-      needed = Boolean(step && step.status === "client_done" && (current?.code === row.detail || transient));
+      needed = Boolean(
+        step && (step.status === "client_done" || step.status === "returned") && (current?.code === row.detail || transient),
+      );
     } else if (row.kind === "admin_replied") {
       const commentId = row.dedupe_key.replace(/^admin_replied:/, "");
       needed = readByComment.get(commentId) === null;
+    } else if (row.kind === "reminder") {
+      // 단계가 그 뒤로 조금이라도 움직였으면(상태 변화·완료 요청) 리마인드는 철 지났다.
+      // returned 는 tick 이 다시 확인하며 updated_at 을 밀므로 「원인 사이클 시작」(first_failed_at)으로 본다
+      const movedAt = step?.status === "returned" ? (step.verify_result?.first_failed_at ?? "") : (step?.updated_at ?? "");
+      const moved = !step || !CLIENT_OPEN.has(step.status) || movedAt > row.created_at;
+      needed = !moved;
     }
     if (!needed) clearedIds.push(row.id);
   }
@@ -391,21 +403,26 @@ export async function sweepOutbox(
     report.cleared = clearedIds.length;
   }
 
-  // GitHub check_invite 2시간 지속 → 재요청 문구 #1
+  // GitHub check_invite 2시간 지속 → 한 사건으로 「한 가지만 더」(returned) + 재요청 문구.
+  // 카톡이 나가는 순간 포털 「다음 할 일」 최상단에 같은 내용이 뜬다(둘이 어긋나면 의뢰인은 카톡을 믿고 포털을 의심한다).
+  // 백오프로 낡은 결과를 믿지 않도록 직전에 한 번 강제로 다시 확인하고, 그래도 check_invite 일 때만 움직인다
   const { data: stuck } = await admin
     .from("steps")
-    .select("id, key, title, project_id, verify_result, projects!inner(id, code, name, client_name, status, github_org)")
+    .select("id, key, title, project_id, status, verify_result, projects!inner(id, code, name, client_name, status, github_org)")
     .eq("status", "client_done")
     .eq("verify_type", "github")
     .neq("projects.status", "closed")
     .limit(30);
   for (const row of stuck ?? []) {
-    const result = row.verify_result as VerifyResult | null;
+    const stale = row.verify_result as VerifyResult | null;
     const project = row.projects as unknown as { id: string; code: string; name: string; client_name: string; github_org: string | null } | null;
     const meta = CONNECT_META[row.key];
-    if (!result || !project || !meta || result.code !== "check_invite" || !project.github_org) continue;
-    const since = new Date(result.first_failed_at ?? result.checked_at).getTime();
+    if (!stale || !project || !meta || stale.code !== "check_invite" || !project.github_org) continue;
+    const since = new Date(stale.first_failed_at ?? stale.checked_at).getTime();
     if (now.getTime() - since < RERQUEST_AFTER_MS) continue;
+    const result = (await runVerification(row.id, "auto")) ?? stale;
+    if (result.code !== "check_invite") continue; // 그 사이 초대가 보이기 시작했거나(pending_accept) 확인됐다
+    if (!(await returnStep(row.id))) continue; // 이미 되돌렸거나 상태가 바뀌었다 — 카드도 그쪽 몫
     const { data: adminRow } = await admin.from("admins").select("email").limit(1).maybeSingle();
     if (!adminRow) continue;
     const outcome = await createOutbox({

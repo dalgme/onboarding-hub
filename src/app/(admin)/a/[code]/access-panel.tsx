@@ -133,11 +133,15 @@ export function AccessPanel({
         </ul>
       ) : null}
 
-      <p className="text-xs text-muted-foreground">
-        {accessSentAt
-          ? ko.admin.password.sentRecorded(format(new Date(accessSentAt), "MM.dd HH:mm"))
-          : ko.admin.password.notSentYet}
-      </p>
+      {accessSentAt ? (
+        <p className="text-xs text-muted-foreground">
+          {ko.admin.password.sentRecorded(format(new Date(accessSentAt), "MM.dd HH:mm"))}
+        </p>
+      ) : (
+        <p className="rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm">
+          {ko.admin.form.nextIssue}
+        </p>
+      )}
 
       {errorMessage ? (
         <p className="text-sm text-destructive">{errorMessage}</p>

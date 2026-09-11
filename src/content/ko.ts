@@ -84,7 +84,12 @@ export const ko = {
       verified: "확인 완료",
       blocked: "막힘",
       skipped: "건너뜀",
+      returned: "한 가지만 더",
     },
+    // 관리자 화면에서만 다르게 부르는 상태
+    stepAdmin: {
+      returned: "되돌림",
+    } as Record<string, string>,
     verify: {
       verified: "연결 확인됨",
       not_found: "아직 확인 안 됨",
@@ -109,6 +114,16 @@ export const ko = {
     nextTaskTitle: "다음 할 일",
     nextTaskAllDone: "지금 하실 일이 없습니다. 나머지는 제가 진행하고 있어요.",
     nextTaskGo: "이어서 진행하기",
+    assisted: {
+      title: "화면공유 20분으로 한 번에 끝내기",
+      description:
+        "계정 3개를 혼자 만드시지 않아도 됩니다. 편한 시간을 남겨 주시면 제가 화면을 보면서 눌러야 할 곳만 짚어 드립니다. 20분이면 충분합니다.",
+      placeholder: "예: 수요일 오후 2~4시, 또는 평일 저녁 8시 이후",
+      submit: "이 시간에 가능해요",
+      thanks: (when: string) => `「${when}」로 남겨 주셨습니다. 확인하는 대로 카톡으로 연락드릴게요.`,
+      selfHint: "먼저 해 보고 싶으시면 아래 「다음 할 일」로 진행하셔도 됩니다. 막히면 언제든 「막혔어요」를 눌러 주세요.",
+      commentPrefix: "화면공유 희망 시간:",
+    },
     linksTitle: "바로가기",
     linksEmpty: "등록된 링크가 아직 없습니다.",
     workUrlButton: "작업 URL 바로가기",
@@ -217,6 +232,8 @@ export const ko = {
     doneChecklistHelp:
       "아래를 모두 확인하셨으면 완료를 눌러 주세요. 하나라도 안 됐으면 「막혔어요」로 알려 주시면 됩니다.",
     doneChecklistSubmit: "모두 확인했습니다 — 완료",
+    returnedTitle: "한 가지만 더 —",
+    returnedFallback: "확인할 것이 하나 생겼습니다. 아래 안내를 따라 주시면 바로 확인해 드려요.",
     // 검증 원인 코드 → 의뢰인 문장. 관리자 1인칭 detail 은 의뢰인 화면에 절대 그리지 않는다.
     // 원칙: 한 일은 인정, 바꿀 것은 하나, 원인은 화면 탓. 금지어: 아직·안 하셨·실패
     verifyCode: {
@@ -318,9 +335,11 @@ export const ko = {
       title: `${project} · 자동 확인 실패`,
       body: `「${step}」 — ${detail}`,
     }),
-    autoVerified: (project: string, step: string) => ({
+    autoVerified: (project: string, step: string, card: boolean) => ({
       title: `${project} · 연결 확인됨`,
-      body: `「${step}」 실제 연결을 확인해 자동으로 완료 처리했습니다. 다음 안내 카톡 문구를 「보낼 카톡」에 준비했습니다.`,
+      body: card
+        ? `「${step}」 실제 연결을 확인해 자동으로 완료 처리했습니다. 다음 안내 카톡 문구를 「보낼 카톡」에 준비했습니다.`
+        : `「${step}」 실제 연결을 확인해 자동으로 완료 처리했습니다. 의뢰인이 포털에서 다음 단계를 바로 봅니다 — 보낼 것은 없습니다.`,
     }),
     autoPending: (project: string, step: string, detail: string) => ({
       title: `${project} · 완료 요청 (아직 확인 안 됨)`,
@@ -342,11 +361,29 @@ export const ko = {
       title: `보낼 카톡 1건 · ${client}`,
       body: `${reason} — 대시보드에서 복사해 카톡으로 보낸다.`,
     }),
+    projectStatus: (project: string, status: string) => ({
+      title: `${project} · ${status === "building" ? "온보딩 완료 — 개발 시작" : status === "delivered" ? "전달 완료" : status}`,
+      body:
+        status === "building"
+          ? "의뢰인 단계가 모두 확인됐다. 상태를 「개발 중」으로 바꿨다 — 개발 착수 링크를 등록한다."
+          : "인수인계 단계가 확인됐다. 상태를 「전달 완료」로 바꿨다 — 「보낼 카톡」에 완료 안내 문구를 올렸다. 종료 탭에서 마무리한다.",
+    }),
     adminWait: (project: string, service: string, days: number, expiring: boolean) => ({
       title: `${project} · ${service} 초대 ${days}일째 내 차례`,
       body: expiring
         ? `초대 메일을 아직 처리하지 않았다. 초대는 보통 7일이면 만료된다 — 오늘 수락하거나 「안 왔음」을 누른다.`
         : `메일함에서 ${service} 초대를 확인하고 「왔음·수락했음」 또는 「안 왔음」을 누른다.`,
+    }),
+    daily: (c: { outbox: number; myTurn: number; unread: number; blocked: number }) => ({
+      title: "오늘의 온보딩",
+      body: [
+        c.outbox > 0 ? `보낼 카톡 ${c.outbox}건` : null,
+        c.myTurn > 0 ? `내 차례(초대 수락·확인) ${c.myTurn}건` : null,
+        c.unread > 0 ? `안 읽은 질문 ${c.unread}건` : null,
+        c.blocked > 0 ? `막힘 ${c.blocked}건` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
     }),
     digest: (count: number) => ({
       title: `열지 않은 알림 ${count}건`,
@@ -385,6 +422,29 @@ export const ko = {
       `▶ 초대 화면: ${p.inviteUrl}\n▶ 이메일: ${p.email} (역할: ${p.roleName})\n` +
       `목록에 없으면 위 이메일로 초대해 주시면 됩니다. 있으면 제가 수락하는 중이니 그대로 두셔도 돼요.\n` +
       `어려우시면 화면공유 20분이면 함께 끝낼 수 있어요.`,
+    reminderFirst: (p: { client: string; stepTitle: string; stepUrl: string; serviceName: string | null }) =>
+      `${p.client}님, 「${p.stepTitle}」 진행에 막힌 곳은 없으신지 여쭙습니다.\n` +
+      (p.serviceName ? `${p.serviceName} 화면이 자주 바뀌어 헷갈리기 쉬운 단계예요. ` : "") +
+      `아래 주소에서 이어서 하실 수 있고, 어디서든 막히면 「막혔어요」만 눌러 주세요.\n${p.stepUrl}\n` +
+      `화면공유 20분이면 함께 끝낼 수 있어요. 편한 시간 알려 주시면 맞추겠습니다.`,
+    reminderSecond: (p: { client: string; stepTitle: string }) =>
+      `${p.client}님, 「${p.stepTitle}」는 화면공유로 같이 하는 편이 빠를 것 같아요.\n` +
+      `20분이면 충분하고, 제가 화면을 보면서 눌러야 할 곳만 짚어 드립니다.\n` +
+      `이번 주 중 편한 시간대를 두 개 정도 알려 주시면 그중 하나로 잡겠습니다.`,
+    scopeReady: (p: { client: string; portalUrl: string }) =>
+      `${p.client}님, 통화로 말씀 나눈 작업 범위를 정리해 포털에 올렸습니다.\n` +
+      `한번 읽어 보시고 빠진 것이 있으면 포털의 「질문·요청」에 남겨 주세요.\n${p.portalUrl}`,
+    linkPinned: (p: { client: string; label: string; url: string; portalUrl: string }) =>
+      `${p.client}님, 「${p.label}」 주소가 생겼습니다.\n▶ ${p.url}\n` +
+      `포털 첫 화면의 큰 버튼으로도 들어가실 수 있어요. 보시고 의견은 「질문·요청」에 남겨 주세요.\n${p.portalUrl}`,
+    delivered: (p: { client: string; links: string[]; memberPages: string[]; portalUrl: string }) =>
+      `${p.client}님, 작업이 마무리되어 전달드립니다. 함께해 주셔서 감사합니다.\n` +
+      (p.links.length > 0 ? `${p.links.join("\n")}\n` : "") +
+      `운영 방법과 월 고정비 안내는 포털의 링크에 정리해 두었습니다.\n${p.portalUrl}\n` +
+      (p.memberPages.length > 0
+        ? `제 계정은 아래 멤버 화면에서 빠진 것을 직접 확인하실 수 있어요.\n${p.memberPages.map((line) => `▶ ${line}`).join("\n")}\n`
+        : "") +
+      `이후에도 궁금한 점은 언제든 카톡으로 편하게 주세요.`,
     adminReplied: (p: { client: string; body: string; portalUrl: string }) =>
       `${p.client}님, 포털에 남겨 주신 글에 답글을 달았습니다.\n\n${p.body}\n\n포털에서도 보실 수 있어요: ${p.portalUrl}`,
     titles: {
@@ -393,6 +453,10 @@ export const ko = {
       rerequestCheckInvite: (serviceName: string) => `${serviceName} 초대 확인 부탁`,
       adminReplied: "답글 알림",
       credentials: "접속 안내",
+      scopeReady: "작업 범위 안내",
+      reminder: (stepTitle: string, round: number) => (round === 1 ? `「${stepTitle}」 3일째 — 안부 겸 안내` : `「${stepTitle}」 7일째 — 화면공유 제안`),
+      linkPinned: (label: string) => `「${label}」 주소 안내`,
+      delivered: "전달 완료 안내",
     },
     credentialsBodyMasked: "(비밀번호는 발급 화면에만 표시 — 장부에 남기지 않는다)",
   },
@@ -420,9 +484,17 @@ export const ko = {
       waiting: (hours: number) => `완료 요청 ${hours}시간 전`,
       waitingClient: "「안 왔음」 처리됨 — 의뢰인 재확인 대기",
       acceptedWaiting: "수락했음 — API 반영 대기 (자동으로 다시 확인 중)",
+      cameNotVisible: "수락했는데 안 보임 → 의뢰인에게 주소 재확인",
       cameDone: "확인 완료로 처리했다.",
       notYet: "수락했음으로 기록했다. API 에서는 아직 안 보인다 — 수락 반영까지 몇 분 걸린다. tick 이 자동으로 다시 본다.",
       notCameDone: "의뢰인 원인으로 전환했다. 「보낼 카톡」에 초대 확인 부탁 문구를 올렸다.",
+    },
+    manualAck: {
+      title: "완료 요청 확인 — 화면으로 확인할 수 없는 단계",
+      waiting: (hours: number) => `완료 요청 ${hours}시간 전`,
+      backToTodo: "대기로 되돌리기",
+      verifiedDone: "확인 완료로 처리했다. 다음 안내 문구가 「보낼 카톡」에 올라간다.",
+      todoDone: "대기로 되돌렸다.",
     },
     // 검증 원인 코드 → 관리자 한 줄 (칩·푸시·테이블)
     verifyCode: {
@@ -574,6 +646,7 @@ export const ko = {
       checkInvite: (service: string) => `${service} 초대 확인 필요`,
       awaitAdmin: (service: string, hours: number) => `${service} 초대 메일 확인 — 왔음/안 왔음 (${hours}시간째)`,
       acceptedWaiting: (service: string) => `${service} 수락했음 — API 반영 대기 (자동 재확인 중)`,
+      acceptedNotVisible: (service: string, hours: number) => `${service} 수락했는데 ${hours}시간째 안 보임 — 팀 주소 확인 [안 보임]`,
       clientCause: (service: string, label: string) => `${service}: ${label} — 의뢰인 조치 대기`,
       systemStuck: (service: string) => `${service} 자동 확인 지연 (일시 오류)`,
       slugStale: (title: string) => `「${title}」 이틀째 초대 전 — 카톡 한 줄`,
@@ -585,8 +658,17 @@ export const ko = {
       scopeMissing: "범위 미작성",
       scopeUnconfirmed: "범위 미확정",
       noGuest: "포털 접근 이메일 없음",
-      notSeen: (days: number) => `의뢰인 ${days}일째 미접속`,
+      notSeen: (days: number) => `의뢰인 ${days}일째 미접속 — 카톡으로 접속 여부 확인`,
+      notSeenCall: (days: number) => `의뢰인 ${days}일째 미접속 — 전화`,
       accessNotSent: "접속 안내 아직 안 보냄",
+    },
+    remind: {
+      title: "미진행 리마인드 (3일·7일, 평일 낮에만 문구 작성)",
+      active: "켜짐 — 3일째 안부, 7일째 화면공유 제안 문구를 「보낼 카톡」에 올린다",
+      pausedUntil: (date: string) => `${date}까지 보류 중 (통화로 일정을 들었을 때)`,
+      pause3: "3일 보류",
+      pause7: "7일 보류",
+      resume: "보류 해제",
     },
     statusCard: {
       lastSeen: "의뢰인 마지막 접속",
@@ -672,7 +754,7 @@ export const ko = {
           title: "프로젝트 생성",
           who: "me",
           where: "새 프로젝트",
-          body: "코드·의뢰인 정보를 입력해 만들면 온보딩 단계 7개가 템플릿에서 자동으로 채워지고, 의뢰인 이메일이 포털 접근 목록에 등록된다.",
+          body: "코드·의뢰인 정보를 입력하고 이 의뢰에 필요한 스택(AI·메일·문자)을 고르면 그만큼의 단계가 템플릿에서 채워지고, 의뢰인 이메일이 포털 접근 목록에 등록된다. 사전 점검이 빨강이면 만들기 전에 원인이 보인다.",
         },
         {
           title: "작업 범위 정리",
@@ -684,7 +766,7 @@ export const ko = {
           title: "의뢰인 초대",
           who: "me",
           where: "설정 탭",
-          body: "「비밀번호 발급」으로 접속 안내문(포털 주소 + 이메일 + 임시 비밀번호)을 만들어 카톡으로 전달한다. 비밀번호 분실 시에도 같은 버튼으로 재발급.",
+          body: "만들자마자 열리는 설정 탭에서 「접속 정보 발급」을 누르면 접속 안내문(포털 주소 + 이메일 + 임시 비밀번호)이 「보낼 카톡」에 오른다. 「카톡으로 보내기」를 누른 순간부터 의뢰인 쪽 시계(미접속·리마인드)가 돈다. 분실 시 같은 버튼으로 재발급, 비밀번호가 어려운 의뢰인은 로그인 링크.",
         },
         {
           title: "계정 연결",
@@ -736,7 +818,12 @@ export const ko = {
       domain: "도메인",
       create: "프로젝트 만들기",
       creating: "만드는 중…",
-      createHelp: "생성하면 온보딩 단계가 템플릿에서 복사되어 채워집니다.",
+      createHelp: "생성하면 아래 미리보기 순서대로 온보딩 단계가 채워지고, 바로 접속 정보 발급 화면으로 갑니다. 발급 → 「카톡으로 보내기」까지가 시작이다.",
+      stacksTitle: "이 의뢰에 필요한 스택",
+      stackAi: "AI 기능 포함 (Claude API — Anthropic Console 단계)",
+      stacksHelp: "체크하지 않은 AI 단계는 처음부터 「건너뜀」으로 들어간다. 선택 단계는 나중에 단계 탭에서도 추가할 수 있다.",
+      previewTitle: (n: number) => `생성될 단계 미리보기 (${n}개 진행)`,
+      nextIssue: "다음: 아래에서 접속 정보를 발급하고 「카톡으로 보내기」를 누른다. 그 순간부터 의뢰인 쪽 시계가 돈다.",
       guests: "포털 접근 이메일",
       guestsHelp: "의뢰인 쪽에서 포털에 들어올 수 있는 이메일 목록입니다.",
       addGuest: "이메일 추가",
@@ -753,7 +840,6 @@ export const ko = {
       copyMessage: "안내문 복사",
       sendKakao: "카톡으로 보내기 (보냈음으로 기록)",
       sentRecorded: (time: string) => `접속 안내 보냈음 · ${time}`,
-      notSentYet: "접속 안내를 아직 보내지 않았다 — 발급 후 「카톡으로 보내기」를 누르면 기록된다.",
       sentJustNow: "보냈음으로 기록했다. 카톡에 붙여넣어 보내면 끝.",
       blockedTitle: "접속 정보를 만들 수 없다",
       messageReady: (email: string) =>

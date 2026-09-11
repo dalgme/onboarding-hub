@@ -145,7 +145,7 @@ guest `last_seen_at is null` · ④ = guest 중 하나라도 `last_seen_at not n
 | ① 접수(drafted) | `/a/new` 위저드 제출 | STEP_TEMPLATE + 체크한 스택 복사(AI 미체크면 connect-anthropic은 skipped) · project_guests 등록 · 사전 점검 P1~P11 실행 | 3분 입력 · 「범위 미작성」 · 빨강일 때만 「검증 설정 고치기 — {ENV}: {원인}」 | 빨강은 생성을 막지 않고 접속 정보만 막는다. 점검 결과는 저장하지 않는다 |
 | ②→③ 초대(invited) | 빨강 0개에서 「접속 정보 만들기」 클릭 | **액션 안에서 동기 실행**: 점검 재실행(60초 캐시) → `issueGuestPassword` → 안내문(주소+이메일+임시 비밀번호+보조 링크) 생성 → 발급 화면에 「보낼 카톡」 카드(credentials, 전문) → [복사] → 카톡 → [보냈음] 시 `access_sent_at`. 비밀번호는 응답에만 있고 `notices.body`에는 넣지 않는다 | 카톡 붙여넣기 1회(이것이 첫 접촉이다) | 「보냈음」을 누르지 않은 채 4시간이면 푸시 1회, 이후 09:00 요약에만. 비밀번호는 응답에만 존재하므로 재발급은 관리자가 버튼을 다시 누른다(이전 비밀번호 무효 = §6 규칙과 일치) |
 | ④ 연결 중(connecting) | 의뢰인: 「만들었습니다」·slug 저장·「완료했습니다」·「막혔어요」·「화면공유로 도움받기」 | 「만들었습니다」/slug 저장 → `doing` + GitHub 선검사(`GET /orgs/{slug}`·`GET /users/{slug}`로 org_not_found/personal_account를 초대 전에) · 완료 요청 즉시 검증(있음) → code·owner 판정 → verified면 다음 단계 안내 문구(보낼 카톡) / owner=client면 포털 카드 + returned + 재요청 문구(보낼 카톡) / owner=admin이면 푸시 / owner=system이면 조용히 백오프 · need_help/blocked → 즉시 푸시, 30분·4시간 재알림 | 「질문·요청 N건」 · 「화면공유 요청 — {의뢰인}, {단계}」 · 「막힘 — {단계}」 · 「{단계} 의뢰인 3회 재시도 — 화면공유 제안됨」 · 「{단계} 이틀째 초대 전 — 카톡 한 줄」 | 의뢰인 화면에는 `code → ko.ts` 매핑 문장만. `detail`은 절대 렌더하지 않는다. admin/system은 「제작자 확인 중」/「잠시 후 자동 재확인」 |
-| ④-b 확인(verifying) | tick(15분): `client_done`이고 `next_check_at` 지난 단계 · 토큰 점검(마지막 점검 55분 경과 시) | GitHub `check_invite`(404 = 진짜 초대 없음): 포털 카드 즉시 · 2h 지속 → 재요청 문구 #1(보낼 카톡) · 48h 지속 → returned(그 사이 pending_accept로 바뀌면 취소) · **Vercel·Supabase `await_admin_first`**: 나에게 「{서비스} 초대 메일 왔는지 확인 [왔음→수락함][안 왔음]」, 24h 재알림, 초대 만료 D-2 재알림. 「안 왔음」을 눌러야 owner=client로 넘어가 재요청·returned 진행 · error(admin) 회복 감지 → 밀린 단계 재확인 + 푸시 「복구됨」 · verified → `advanceProjectStatus()` | 「Supabase 초대 메일 확인 [왔음][안 왔음]」 · 「Anthropic 초대 왔는지 확인 [왔음][안 왔음]」 · 「검증 설정 고치기 — {ENV}」 | tick 한 번 최대 10단계, 재검증 합계 30초 예산, fetch마다 `AbortSignal.timeout(8000)`. system 3회 연속이면 admin 승격. 결과 저장은 CAS(§4-3) |
+| ④-b 확인(verifying) | tick(15분): `client_done`이고 `next_check_at` 지난 단계 · 토큰 점검(마지막 점검 55분 경과 시) | GitHub `check_invite`(404 = 진짜 초대 없음): 포털 카드 즉시 · 2h 지속 → **강제 재확인 1회 후 그대로면 returned + 재요청 문구 #1 을 한 사건으로**(그 사이 pending_accept로 바뀌면 취소 — 카톡과 포털이 같은 말을 한다) · **Vercel·Supabase `await_admin_first`**: 나에게 「{서비스} 초대 메일 왔는지 확인 [왔음→수락함][안 왔음]」, 24h 재알림, 초대 만료 D-2 재알림. 「안 왔음」을 눌러야 owner=client로 넘어가 재요청·returned 진행 · error(admin) 회복 감지 → 밀린 단계 재확인 + 푸시 「복구됨」 · verified → `advanceProjectStatus()` | 「Supabase 초대 메일 확인 [왔음][안 왔음]」 · 「Anthropic 초대 왔는지 확인 [왔음][안 왔음]」 · 「검증 설정 고치기 — {ENV}」 | tick 한 번 최대 10단계, 재검증 합계 30초 예산, fetch마다 `AbortSignal.timeout(8000)`. system 3회 연속이면 admin 승격. 결과 저장은 CAS(§4-3) |
 | ⑤ 개발(building) | 자동 전이 또는 수동 | 「연결이 모두 확인됐습니다」 문구 · 고정 링크 등록 시 링크 안내 문구 · 관리자 답글 즉시 **본문 전문** 문구 — 전부 「보낼 카톡」 카드 | 개발 · 「배포 링크 미등록」(7일) · 「범위 확정 후 요청 N건」 · 「카톡 답장 옮겨 적기」(수동) | 전이 조건 부분 충족이면 「개발 시작을 막는 항목 1건」으로 이유 표시 |
 | ⑥ 인도(delivered) | handover 「확인 완료」 | status='delivered' · 완료 안내 문구(최종 주소·문서·고정비) → 「보낼 카톡」 · 종료 탭 활성화 | README·운영 방법·고정비 | 30일 경과 시 「종료 미완료 30일」 |
 | ⑦ 종료(closed) | 종료 탭 순서 진행 | 항목 3 중 Vercel 탈퇴 [자동] · 항목 5 접근 회수 [자동] · 항목 6 완료 안내 문구 [자동 작성 → 내가 보냄] | 항목 1·2(프로젝트 전용 키만)·3 나머지·4 | 자동 실행 실패는 그 항목만 미체크 + HTTP 코드. 접근 회수 실패는 close를 막지 않되 빨강 |
@@ -177,7 +177,7 @@ type VerifyResult = {
 | not_found | `no_slug` | client | slug null | 조직 주소를 먼저 붙여넣어 주시면 바로 확인해 드려요 | 즉시 returned(포털 안에서 고친다) |
 | not_found | `org_not_found` | client | GitHub `GET /orgs/{slug}` 404 (Vercel·Supabase는 멤버 전 조회 불가 → 이 코드 없음) | 붙여넣은 주소로는 조직이 찾아지지 않아요 — 조직 화면 주소창의 주소를 한 번 더 붙여넣어 주세요 | 즉시 returned |
 | not_found | `personal_account` | client | GitHub `GET /users/{slug}`.type==='User' | 붙여넣은 주소가 개인 계정 주소예요(github.com/이름). 조직 화면의 주소를 다시 붙여넣어 주세요. 조직을 아직 안 만드셨다면 ①로 돌아가시면 됩니다 | 즉시 returned |
-| not_found | `check_invite` | **client (GitHub만)** | GitHub `GET /user/memberships/orgs/{org}` 404인데 `GET /orgs/{org}`는 200 = 초대 없음 | 초대를 보내신 뒤라면 반영에 잠시 걸릴 수 있어요. 초대 화면에서 이 이메일이 보이는지만 한 번 확인해 주세요 [이메일 복사] | 카드 즉시 · 2h → 재요청 문구 #1(보낼 카톡) · 48h → returned(pending_accept로 바뀌면 취소) |
+| not_found | `check_invite` | **client (GitHub만)** | GitHub `GET /user/memberships/orgs/{org}` 404인데 `GET /orgs/{org}`는 200 = 초대 없음 | 초대를 보내신 뒤라면 반영에 잠시 걸릴 수 있어요. 초대 화면에서 이 이메일이 보이는지만 한 번 확인해 주세요 [이메일 복사] | 카드 즉시 · 2h → 강제 재확인 후 returned + 재요청 문구 #1(pending_accept로 바뀌면 취소) |
 | not_found | `await_admin_first` | **admin (Vercel·Supabase)** | Vercel `/v2/teams`에 팀 없음 / Supabase 403·404 — 초대 전인지 내 수락 전인지 API로 구분 불가 | 초대를 보내셨다면 제가 수락하는 중입니다. 확인되는 대로 소식을 드릴게요 | 내 할 일 「{서비스} 초대 메일 확인 [왔음][안 왔음]」 · 24h 재알림 · 초대 만료 D-2 재알림. 「안 왔음」→ owner=client, `check_invite`로 전환해 위 행의 절차 |
 | not_found | `wrong_role` | client | GitHub `membership.role!=='admin'` / Vercel `role ∉ {OWNER, MEMBER}` / Supabase `role_name ∉ 허용 집합` | 초대는 잘 됐어요. 역할 하나만 {Owner/Member/Administrator}로 바꿔 주시면 끝이에요 [역할 화면 열기] | 재요청 문구 즉시 작성(보낼 카톡) — 보내는 사람이 관리자라 승인 단계가 곧 발송이다(D7 종결). 허용 role 집합(확인 필요 10-10) 전까지 문구 끝에 「제가 역할을 한 번 더 확인하겠습니다」 |
 | not_found | `pending_accept` | admin | GitHub `state==='pending'` / Vercel `confirmed===false` | 제작자가 초대를 수락하는 중입니다 | 내 할 일 + 24h 재알림 + 만료 D-2 재알림. 자동 수락 없음(D5=B) |
@@ -201,8 +201,10 @@ type VerifyResult = {
 |---|---|---|---|
 | 접속 안내 「보냈음」 후 미로그인 | (자동 문구 없음) | – | 3일: 「카톡으로 접속 여부 확인」 · 5일: 「전화」 |
 | 의뢰인 다음 단계가 3일째 그대로 (결제 필요 단계 제외) | 3일: 「막힌 곳 있으신지」 + 딥링크 | 7일: 화면공유 제안 | 7일: 「{단계} 7일째 정체 — 전화 제안」 |
+| ↳ 「그대로」의 기준 시각 `stallSince` = max(접속 안내 보낸 시각, 직전 의뢰인 단계 확인 시각, 이 단계가 마지막으로 움직인 시각(doing: `updated_at` · returned: 원인 사이클 시작 `first_failed_at`), 마지막 의뢰인 코멘트, 보류 해제 시각). 대상은 **onboarding 프로젝트의 첫 제작자 단계 앞 의뢰인 단계**만(개발 뒤의 「도메인 연결」은 재촉하지 않는다). dedupe 에폭 = `stallSince` 분 — 진전이 생기면 새 사이클 | | | |
 | 결제 필요 단계(connect-vercel·connect-anthropic) 3일째 | (자동 문구 없음) | – | 3일: 「결제 부담 여부 통화」 |
-| `returned` 후 미조치 | 즉시: 원인별 재요청 | 48h: 2차 | 96h 또는 의뢰인 재시도 3회: 화면공유 제안 문구 + 「시간 정하기」 |
+| `returned` 후 미조치 | 즉시: 원인별 재요청 | 3일·7일: 위 정체 리마인드가 같은 규칙으로 잇는다(같은 단계에는 재요청·리마인드 통틀어 카드 1장) | 완료 2회 실패: 포털 화면공유 버튼 1순위 · 의뢰인 재시도 3회: 칩 「assisted 전환 검토」 |
+| `returned` → `client_done` 역전이 | 원인이 내 쪽으로 넘어오면(초대가 보이기 시작함·내 메일함 차례) 시스템이 「한 가지만 더」를 거둔다. 일시 오류로는 오가지 않는다 | | |
 | `blocked` / `need_help` | (의뢰인 문구 없음 — 내가 직접 답한다) | – | 즉시 → 30분(푸시) → 4시간(D17) , 답글·상태 변경 시 중단 |
 | `pending_accept` / `await_admin_first` / `await_admin_ack` | – | – | 즉시 → 24h → 초대 만료 D-2(GitHub·Vercel 7일 — 인용·직접 재확인 못 함) |
 | slug 저장 후 48h 완료 요청 없음 | – | – | 「{단계} 이틀째 초대 전 — 카톡 한 줄」 |
@@ -218,7 +220,7 @@ type VerifyResult = {
 
 **상한(종류별로 다르다)**: `reminder` 계열(정체·미접속·화면공유 제안)만 「프로젝트당 하루 1건·주말 보류·단계당 2건」. `credentials`·`rerequest` #1·`next_step`(연결 확인)·`admin_replied`는 **즉시 작성**, 「같은 단계·같은 code에 하루 1건」(dedupe_key)로만 제한. **묶음 문구는 만들지 않는다** — 상한을 넘는 리마인드는 `skipped(cap)`로 기록하고 포털 카드로만 보인다. 공휴일은 최소 토·일 제외로 시작(확인 필요 9).
 
-**거둠(신설, kind 별 술어)**: tick 이 pending 행마다 「아직 필요한가」를 계산해 거짓이면 `skipped(condition_cleared)`로 바꾸고 카드에서 내린다. 프로젝트 `closed` 는 전 종류 거둠. `next_step` — 카드 생성 이후 의뢰인이 포털에 접속했거나(`last_seen_at > created_at`) 다음 의뢰인 단계가 `todo` 를 벗어났으면 필요 없다(포털이 본체). `rerequest` — 그 단계가 `client_done` 이 아니거나 `verify_result.code` 가 카드의 원인 코드와 다르면 필요 없다(의뢰인이 로그인만 한 것은 거두지 않는다 — 행동이 필요한 문구다). `admin_replied` — 그 답글의 `read_at` 이 찍히면 필요 없다. `reminder`(Phase 2) — 정지 조건 a~g 중 하나라도 참이거나 대상 단계가 열려 있지 않으면 필요 없다. 관리자가 철 지난 문구를 보내는 일을 코드로 막는다.
+**거둠(신설, kind 별 술어)**: tick 이 pending 행마다 「아직 필요한가」를 계산해 거짓이면 `skipped(condition_cleared)`로 바꾸고 카드에서 내린다. 프로젝트 `closed` 는 전 종류 거둠. `next_step` — 카드 생성 이후 의뢰인이 포털에 접속했거나(`last_seen_at > created_at`) 다음 의뢰인 단계가 `todo` 를 벗어났으면 필요 없다(포털이 본체). `rerequest` — 그 단계가 `client_done` 이 아니거나 `verify_result.code` 가 카드의 원인 코드와 다르면 필요 없다(의뢰인이 로그인만 한 것은 거두지 않는다 — 행동이 필요한 문구다). `admin_replied` — 그 답글의 `read_at` 이 찍히면 필요 없다. `reminder`(Phase 2) — 정지 조건 a~h 중 하나라도 참이거나 대상 단계가 열려 있지 않거나 카드 생성 뒤 단계가 움직였으면(returned 는 원인 사이클 기준) 필요 없다. 관리자가 철 지난 문구를 보내는 일을 코드로 막는다.
 **대체(신설)**: 같은 `(project_id, step_id, kind)`의 pending 행이 있는데 새 문구가 계산되면 이전 행을 먼저 `superseded`로 바꾸고 새 행을 넣는다. 카드에는 항상 주제당 최신 1건.
 
 문구 원칙(CX): 주어는 "우리 작업", 원인은 화면·기본값 탓, 한 일은 먼저 인정, 바꿀 것은 하나, 끝은 항상 「화면공유 20분」
@@ -478,7 +480,10 @@ admin ack 파생 · 프래그먼트 로그인 링크(M14) · **「보낼 카톡�
 
 수용 기준:
 - 위저드 → credentials 카드가 발급 화면에 뜨고 [보냈음] 전에는 `access_sent_at` null · [보냈음] → 기록 · `notices.body`에 비밀번호 문자열 없음 · 빨강 상태에서는 발급 버튼 자체가 비활성
-- GitHub 초대 없이 완료 → 2h 후 재요청 문구 #1 카드(주소 복사·People 링크·Owner) · 48h 후 `returned` + 포털 「다음 할 일」 최상단 · **진행률 유지(0.5)**
+- GitHub 초대 없이 완료 → 2h 후 tick 이 강제 재확인 → 그대로면 `returned` + 재요청 문구 #1 카드(단계 링크·이메일 복사 안내·Owner)를 **한 tick 에** · 포털 「다음 할 일」 최상단 「한 가지만 더」 · **진행률 유지(0.5)** · 그 사이 pending_accept 로 바뀌면 둘 다 없음
+- 의뢰인 세션: 주소 없이 완료 → 홈 최상단 「한 가지만 더」 카드 + 단계 화면은 주소 입력 칸으로 착지 · check_invite 확인 카드에 [초대할 이메일 복사]·[초대 화면 열기] · 완료 2회 실패 → 화면공유 버튼 1순위 · 375px 스크린샷
+- 관리자 「확인 완료로」(수동 단계·현재 상황 카드에서 1클릭) → 「확인됐습니다 + 다음은 …」 카드 · 범위 확정 → 「작업 범위 확인」 단계 verified · 첫 제작자 단계 앞 의뢰인 단계 전부 끝 + 범위 확정 → `building` (「도메인 연결」은 조건 밖) · 의뢰인이 직접 완료해 즉시 확인된 단계의 푸시는 「보낼 것 없음」이라고 말한다
+- 선택 단계(Resend·Solapi)는 생성 시에도 나중에 추가해도 「개발 진행」 앞에 들어간다 · 설정 탭에서 의뢰인 이메일을 고치면 아직 접속 안 한 게스트 행이 따라간다
 - 초대 수락 → `verified` + 「확인됐습니다 + 다음은 Vercel」 카드 즉시 · 같은 날 두 번째 단계 verified도 **즉시 카드 1건**(next_step은 하루 1건 상한 대상이 아님)
 - `SUPABASE_ACCESS_TOKEN` 무효 + 3일 정체 → 리마인드 카드 0건 · GitHub가 `pending_accept`인 채 Vercel 3일 정체 → 0건(정지 e) · 「7일 보류」 칩 → 0건
 - connect-vercel 3일 정체 → 카드 0건, 칩 「결제 부담 여부 통화」
@@ -626,7 +631,7 @@ alter table public.steps add constraint steps_status_check
 | 리마인드 폭주·중복 발송 | 에폭 있는 dedupe_key + 종류별 상한 + 일일 상한 부분 유니크 인덱스. tick은 멱등 |
 | 검증 동시 실행으로 중복 푸시 | CAS 저장 + 전이 기반 dedupe + `/api/verify` 쿨다운 + tick 어드바이저리 락 |
 | 내 지연으로 의뢰인을 재촉 | Vercel·Supabase는 owner=admin 시작. 정지 조건 (e). 자동 재확인은 막힘 판정에 넣지 않는다 |
-| 잘못된 원인 분류로 엉뚱한 재요청 | owner=client 즉시 되돌림은 GitHub 확정 코드 3개 + GitHub check_invite 48h 유예. wrong_role 문구는 즉시 작성하되(D7=A) 허용 role 집합 확정 전까지 끝에 「제가 역할을 한 번 더 확인하겠습니다」— 보내는 사람이 관리자라 오분류의 마지막 방어선은 카드 위의 사람이다 |
+| 잘못된 원인 분류로 엉뚱한 재요청 | owner=client 즉시 되돌림은 GitHub 확정 코드 3개(+wrong_role) + GitHub check_invite 2h 유예(되돌리기 직전 강제 재확인 1회). wrong_role 문구는 즉시 작성하되(D7=A) 허용 role 집합 확정 전까지 끝에 「제가 역할을 한 번 더 확인하겠습니다」— 보내는 사람이 관리자라 오분류의 마지막 방어선은 카드 위의 사람이다 |
 | 첫 접촉 실패 | 접속 정보는 카톡 하나(발송 채널 없음)·비밀번호 로그인 1순위. 링크는 프래그먼트 랜딩 + 유효시간 P11 대조. 실패 문구가 비밀번호 로그인으로 안내 |
 | 관리자가 「보낼 카톡」을 안 본다 | 생성 즉시 푸시 + 4시간 적체 푸시 + 09:00 요약 건수 + P6 노랑. 포털 카드가 미러라 카톡이 늦어도 의뢰인 화면은 정확하다 |
 | 카톡 답이 포털에 안 남는다 | §3 #18 수동 「옮겨 적기」 + 24h 미답 질문 재푸시. 자동 수집 없음(N4) |
@@ -712,6 +717,16 @@ DNS 자동 검증 · 두 번째 크론 · 두 번째 jsonb 컬럼 · 공용 PAT�
 | 34 | (3판 심사·CX) 카톡 마지막 줄 「이 카톡으로 답 주셔도 됩니다」가 포털 「여기에 남겨 주세요」와 충돌 · admin_replied 전문이 8줄 상한과 충돌 · §11 #8 잔재 | **반영** | 고정 마지막 줄 삭제 — 재요청은 「화면공유 20분」, 답글 알림은 「포털에서도 보실 수 있어요」로 끝난다. 길이 상한은 admin_replied(전문)·credentials 를 명시적 예외로 둔다. #8 은 #27 로 대체 |
 | 35 | (3판 심사·데이터) 일일 상한 부분 유니크 인덱스 충돌은 `on conflict (dedupe_key)` 가 흡수하지 않는다 | **반영** | 23505 → duplicate 로 처리(M2). Phase 2 reminder 는 삽입 전 건수 확인 |
 | 36 | (3판 심사·CX) next_step 카드가 「지금 포털에 있는 의뢰인」에게도 만들어져 tick 거둠 전에 보내질 수 있다 | **반영** | 최근 15분 내 접속한 프로젝트에는 next_step 을 만들지 않는다(포털이 이미 보여준다) |
+| 37 | (Phase 2 심사·자동화) 전이 조건 「의뢰인 단계 전부 verified」는 기본 템플릿(「도메인 연결」이 「개발 진행」 뒤)에서 절대 참이 되지 않는다 | **반영** | 조건 = 첫 제작자 단계 앞 의뢰인 단계 전부 verified/skipped **+ 범위 확정**. `onboardingClientSteps()` 하나를 전이·다음 단계 문구·리마인드가 같이 읽는다. 사건 핸들러에서만 부른다(tick 에 두면 사람의 되돌림과 싸운다) |
+| 38 | (Phase 2 심사·자동화) 관리자 「확인 완료로」가 다음 안내 문구를 만들지 않아 프로젝트마다 2회(범위 확인·도메인) 빠진다 · 수동 단계 확인이 단계 탭 2~3클릭 | **반영** | `adminSetStepStatus(verified)` → `onStepVerified('admin')`. 「현재 상황」에 수동 단계 완료 요청 행 [확인 완료로][대기로 되돌리기]. 범위 확정은 「작업 범위 확인」 단계도 함께 verified |
+| 39 | (Phase 2 심사·관리자) 「연결 확인됨」 푸시가 존재하지 않는 카드를 가리킨다(의뢰인이 직접 완료해 즉시 확인된 흔한 경우) | **반영** | 문구를 먼저 만들고 푸시가 「카드 있음/보낼 것 없음」을 말한다. url 도 카드가 있을 때만 `/a#outbox` |
+| 40 | (Phase 2 심사·의뢰인) GitHub check_invite 는 카톡이 2h 에 나가는데 포털은 48h 동안 「하실 일 없음」 | **반영** | 2h 에 강제 재확인 후 returned + 재요청 카드를 한 사건으로. 48h 규칙 삭제 |
+| 41 | (Phase 2 심사·규칙) 리마인드 「3일째 그대로」의 기준 시각이 없다 · 개발 기간 내내 「도메인 연결」 재촉 · 보류 해제 뒤 같은 키로 막힘 | **반영** | `stallSince` 정의(§4-4) · 대상은 onboarding 의 첫 제작자 단계 앞 의뢰인 단계 · 에폭에 보류 해제 시각 포함 |
+| 42 | (Phase 2 심사·규칙) returned 가 재검증·거둠에서 빠지고, 원인이 내 쪽으로 바뀌어도 「한 가지만 더」가 남는다 · 재완료해도 에폭이 그대로라 재요청이 중복 키로 사라진다 | **반영** | tick·화면 재확인에 returned 포함 · owner=admin 으로 바뀌면 `client_done` 역전이(일시 오류로는 안 움직임) · 의뢰인 재완료는 새 사이클(에폭 리셋) · 「대기로 되돌리기」는 verify_result 도 비움 |
+| 43 | (Phase 2 심사·관리자) 같은 사실(안 왔음 → 의뢰인 재확인)이 칩·2탭 패널·배지·카드에 중복 | **반영·부분** | 2탭 패널은 「안 왔음」 처리된 행을 그리지 않는다(행동이 없다). 같은 단계의 재요청·리마인드 카드는 종류를 넘어 1장(supersede). 칩·배지·카드는 각자 화면이 달라 유지 |
+| 44 | (Phase 2 심사·규칙) 선택 단계가 인수인계 뒤에 붙어 순서 기반 자동화가 어긋난다 · 의뢰인 이메일 수정이 접근 목록을 안 따라간다 | **반영** | 「개발 진행」 앞 삽입(생성·추가 모두) · 아직 접속 안 한 게스트 행만 새 이메일로 |
+| 45 | (Phase 2 심사·의뢰인) 확인 카드가 원인 문장만 주고 누를 것이 없다 · 완료를 거듭 눌러도 화면공유가 승격되지 않는다 | **반영** | check_invite/wrong_role 확인 카드에 [이메일 복사]·[초대 화면 열기]·역할 이름 · `client_attempts ≥ 2` 면 화면공유 버튼 1순위 |
+| 46 | (Phase 2 심사) 위저드 2화면화 · 09:00 요약과 다이제스트 겹침 · 보류 칩 없음 · assisted 첫 화면 없음 · closed 카드 거둠 충돌 · 24h 미답 재푸시 · 결제 프리셋 칩 · 배지 side | **반증·이미 반영** | 작업 트리에 이미 있거나(위저드·보류 칩·assisted 카드·배지 side·delivered 카드) 전제가 코드와 다름(다이제스트는 08시, 미답은 매일 재알림). 결제 프리셋은 「화면공유로 도움받기」가 타이핑 없는 탈출구라 보류 |
 | 26 | (사용자 결정 09-10) 의뢰인에게 전할 메시지는 개발자 대시보드에 표시하고, 발송은 관리자가 카톡으로 직접 | **반영(3판)** | Gmail SMTP·nodemailer·P6(메일)·D13·D14 삭제, D1=D·D7=A·D8=B 종결, M10을 「보낼 카톡」(`notices.channel='outbox'` + `/a` 카드 + 템플릿 9종)으로 교체, §4-4에 거둠·대체 규칙 신설, Phase 1a에 최소판 포함(템플릿 3종), D17(관리자 본인용 2차 채널) 신설. CLAUDE.md §2·§6의 「메일 발송 없음」은 완화하지 않고 유지한다 |
 
 총평 중 별도 지적: 「공휴일 미고려」는 확인 필요 10-9로 유지(토·일 제외 시작). 「Gmail 일일 한도 수치」는 3판에서 메일 채널과 함께 사라졌다(확인 필요 10-4는 카톡 미리보기 항목으로 교체).

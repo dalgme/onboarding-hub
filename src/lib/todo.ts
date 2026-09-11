@@ -36,6 +36,7 @@ export type ProjectLite = Pick<
 > & Partial<Pick<ProjectRow, "support_tier">>;
 
 const NOT_SEEN_AFTER_DAYS = 3;
+const NOT_SEEN_CALL_DAYS = 5; // 카톡으로도 답이 없으면 전화
 
 export function buildTodos(
   project: ProjectLite,
@@ -83,7 +84,7 @@ export function buildTodos(
   let clientRetries = 0;
   let clientDone = 0; // 원인 코드로 따로 말하지 못한 완료 요청만 센다
   for (const step of steps) {
-    if (step.status !== "client_done") continue;
+    if (step.status !== "client_done" && step.status !== "returned") continue;
     const result = step.verify_result;
     const code = result?.code;
     const service = CONNECT_META[step.key]?.serviceName ?? SIMPLE_CONNECT_META[step.key]?.serviceName ?? step.title;
@@ -92,7 +93,13 @@ export function buildTodos(
       items.push({ key: `invite-${step.key}`, label: copy.pendingAccept(service), tab: "steps", urgent: true });
     } else if (code === "await_admin_first" || code === "await_admin_ack") {
       if (result?.admin_first_ack === "came") {
-        items.push({ key: `invite-${step.key}`, label: copy.acceptedWaiting(service), tab: "steps", urgent: false });
+        // 수락했는데 1시간 넘게 API 에 안 보이면 팀 주소가 틀렸을 가능성이 크다 — 급한 칩으로
+        const hours = differenceInHours(now, new Date(result.checked_at));
+        items.push(
+          hours >= 1
+            ? { key: `invite-${step.key}`, label: copy.acceptedNotVisible(service, hours), tab: "steps", urgent: true }
+            : { key: `invite-${step.key}`, label: copy.acceptedWaiting(service), tab: "steps", urgent: false },
+        );
         continue;
       }
       const hours = differenceInHours(now, new Date(result?.first_failed_at ?? step.checked_at ?? now));
@@ -133,7 +140,9 @@ export function buildTodos(
   } else if (guests.every((guest) => !guest.last_seen_at)) {
     // 미접속 일수는 「보낸 날」부터 센다 (만든 날부터 세면 보내기 전부터 재촉한다)
     const days = differenceInCalendarDays(now, new Date(project.access_sent_at ?? project.created_at));
-    if (days >= NOT_SEEN_AFTER_DAYS) {
+    if (days >= NOT_SEEN_CALL_DAYS) {
+      items.push({ key: "notSeen", label: copy.notSeenCall(days), tab: "settings", urgent: true });
+    } else if (days >= NOT_SEEN_AFTER_DAYS) {
       items.push({ key: "notSeen", label: copy.notSeen(days), tab: "settings", urgent: false });
     }
   }
@@ -141,11 +150,23 @@ export function buildTodos(
 }
 
 // 아직 끝나지 않은 상태(내 확인 대기 포함) — 제작자 단계 판정용
-const OPEN: ReadonlySet<StepRow["status"]> = new Set(["todo", "doing", "blocked", "client_done"]);
+const OPEN: ReadonlySet<StepRow["status"]> = new Set(["todo", "doing", "blocked", "client_done", "returned"]);
 // 의뢰인 손에 있는 상태 — client_done은 의뢰인이 끝내고 「내」 확인을 기다리는 것이다 (§5)
-const CLIENT_OPEN: ReadonlySet<StepRow["status"]> = new Set(["todo", "doing", "blocked"]);
+const CLIENT_OPEN: ReadonlySet<StepRow["status"]> = new Set(["todo", "doing", "blocked", "returned"]);
 
 // 의뢰인이 다음에 할 단계 — 순서상 첫 번째로 아직 의뢰인 손에 있는 단계
+// 온보딩 국면의 의뢰인 단계 = 첫 제작자(agency) 단계보다 앞에 있는 의뢰인 단계.
+// 기본 템플릿의 「도메인 연결」은 「개발 진행」 뒤라 여기 들어가지 않는다 — 상태 전이·리마인드·
+// 「다음 단계」 문구가 전부 이 하나의 집합을 읽는다
+export function onboardingClientSteps<T extends { owner_side: string; order_index: number }>(steps: T[]): T[] {
+  const firstAgency = steps
+    .filter((step) => step.owner_side === "agency")
+    .sort((a, b) => a.order_index - b.order_index)[0];
+  return steps
+    .filter((step) => step.owner_side === "client" && (!firstAgency || step.order_index < firstAgency.order_index))
+    .sort((a, b) => a.order_index - b.order_index);
+}
+
 export function nextClientStep(steps: StepLite[]): StepLite | null {
   return (
     [...steps]

@@ -180,13 +180,18 @@ projects                          의뢰 사안
 
 ```
 todo → doing → client_done → verified
+ client_done → returned (시스템: 의뢰인이 고칠 원인이 확정됨 · 「안 왔음」)
+ returned → client_done (의뢰인이 고치고 다시 「완료했습니다」 · 원인이 내 쪽으로 넘어옴)
  any → blocked (blocked_reason 필수)
  any → skipped (나만)
 ```
 
 - **의뢰인은 `doing` / `client_done` / `blocked` 로만 변경 가능**
-- `verified` / `skipped` 는 나만. RLS `WITH CHECK`로 DB 레벨 강제
-- 진행률 = `(verified × 1.0 + client_done × 0.5) / 전체 단계 수`
+- `verified` / `skipped` 는 나만. RLS `WITH CHECK`로 DB 레벨 강제. `returned` 는 시스템(service_role)만 —
+  의뢰인 화면에는 「한 가지만 더」, 관리자 화면에는 「되돌림」. 포털 「다음 할 일」 최상단에 원인 문장과 함께 뜬다
+- 진행률 = `(verified × 1.0 + (client_done + returned) × 0.5) / 전체 단계 수`
+- 프로젝트 상태는 사건이 올린다(`src/lib/lifecycle.ts`): 첫 제작자 단계 앞의 의뢰인 단계가 전부 끝나고 범위가 확정되면
+  `building`, 「배포 및 인수인계」가 확인되면 `delivered`. 앞으로만 간다 — 되돌리기는 설정 탭에서 사람이
 
 `client_done`("했어요")과 `verified`(실제로 됐음)를 절대 합치지 않는다.
 개인 계정에 만들었거나 이메일 오타 난 경우가 가장 흔한 사고다.

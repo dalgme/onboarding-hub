@@ -38,7 +38,8 @@ export default async function AdminDashboardPage() {
 
   // 화면이 열리는 것이 곧 시계다 — 오래된 완료 요청을 먼저 다시 확인하고 그린다
   // (내가 초대를 수락한 뒤 여기를 열면 그 자리에서 「확인 완료」가 된다)
-  await reverifyStale({ limit: 6 });
+  // 외부 API 지연이 화면을 오래 막지 않게 한 번에 3단계까지만 — 나머지는 tick 이 본다
+  await reverifyStale({ limit: 3 });
 
   const [
     { data: projects },

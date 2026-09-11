@@ -328,3 +328,26 @@ export async function startStep(input: z.infer<typeof startSchema>): Promise<Act
   revalidatePath(`/p/${parsed.data.code}`, "layout");
   return { ok: true };
 }
+
+
+const proposeSchema = z.object({
+  projectId: z.uuid(),
+  code: z.string().min(1),
+  when: z.string().trim().min(2).max(200),
+});
+
+// assisted 등급 첫 화면: 「편한 시간을 남겨 주세요」 — 질문·요청 코멘트 하나로 남긴다(새 테이블 없음)
+export async function proposeScreenShareTime(
+  input: z.infer<typeof proposeSchema>,
+): Promise<ActionResult> {
+  const parsed = proposeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: ko.common.error };
+  const { projectId, code, when } = parsed.data;
+  return addGuestComment({
+    projectId,
+    code,
+    stepId: null,
+    kind: "request",
+    body: `${ko.portal.assisted.commentPrefix} ${when}`,
+  });
+}

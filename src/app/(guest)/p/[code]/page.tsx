@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/common/empty-state";
 import { Markdown } from "@/components/common/markdown";
 import { StepStepper } from "@/components/onboarding/step-stepper";
 import { CommentThread } from "@/components/comment/comment-thread";
+import { AssistedCard } from "@/components/onboarding/assisted-card";
 import { WorkLog } from "@/app/(guest)/p/[code]/work-log";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
@@ -75,11 +76,21 @@ export default async function PortalHomePage({
       step.owner_side === "client" &&
       (step.status === "todo" ||
         step.status === "doing" ||
-        step.status === "blocked"),
+        step.status === "blocked" ||
+        step.status === "returned"),
   );
   const stepTitles = Object.fromEntries(
     allSteps.map((step) => [step.id, step.title]),
   );
+  // assisted 등급: 화면공유 시간을 이미 남겼는가
+  const proposed = (comments ?? []).find(
+    (comment) =>
+      comment.author_side === "client" &&
+      !comment.deleted_at &&
+      comment.body.startsWith(ko.portal.assisted.commentPrefix),
+  );
+  const showAssisted =
+    project.support_tier === "assisted" && project.status === "onboarding" && Boolean(nextStep);
   const unreadFromAdmin = (comments ?? []).filter(
     (comment) =>
       comment.author_side === "admin" && !comment.read_at && !comment.deleted_at,
@@ -119,6 +130,14 @@ export default async function PortalHomePage({
             {ko.portal.tasksGuide}
           </p>
 
+          {showAssisted ? (
+            <AssistedCard
+              projectId={project.id}
+              code={code}
+              proposed={proposed ? proposed.body.replace(ko.portal.assisted.commentPrefix, "").trim() : null}
+            />
+          ) : null}
+
           {project.status !== "closed" && nextStep ? (
             <Card className="border-primary/40 bg-accent">
               <CardContent className="flex flex-col gap-3 p-5">
@@ -126,6 +145,13 @@ export default async function PortalHomePage({
                   {ko.portal.nextTaskTitle}
                 </p>
                 <p className="text-base font-semibold">{nextStep.title}</p>
+                {nextStep.status === "returned" ? (
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    <span className="font-medium text-foreground">{ko.stepDetail.returnedTitle} </span>
+                    {(nextStep.verify_result?.code && ko.stepDetail.verifyCode[nextStep.verify_result.code]) ??
+                      ko.stepDetail.returnedFallback}
+                  </p>
+                ) : null}
                 <Link
                   href={`/p/${code}/steps/${nextStep.key}`}
                   className={cn(buttonVariants({ size: "lg" }), "w-full")}

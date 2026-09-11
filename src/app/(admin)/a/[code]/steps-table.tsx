@@ -113,7 +113,7 @@ export function StepsTable({
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <StepStatusBadge status={step.status} />
+                  <StepStatusBadge status={step.status} side="admin" />
                 </td>
                 <td className="px-4 py-3">
                   {step.verify_type !== "manual" ? (

@@ -81,6 +81,13 @@ export default async function StepDetailPage({
         <p className="text-sm text-muted-foreground">
           {isClientStep ? ko.stepDetail.yourTurn : ko.stepDetail.agencyTurn}
         </p>
+        {step.status === "returned" ? (
+          <p className="rounded-md bg-warning/10 px-3 py-2 text-sm leading-relaxed text-foreground">
+            <span className="font-medium">{ko.stepDetail.returnedTitle} </span>
+            {(step.verify_result?.code && ko.stepDetail.verifyCode[step.verify_result.code]) ??
+              ko.stepDetail.returnedFallback}
+          </p>
+        ) : null}
       </div>
 
       <Markdown>{step.description_md}</Markdown>

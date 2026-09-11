@@ -1,7 +1,9 @@
 import { format } from "date-fns";
 import { TodoList } from "@/app/(admin)/a/todo-list";
 import { AckPanel, type AckItem } from "@/app/(admin)/a/[code]/ack-panel";
-import { CONNECT_META, SIMPLE_CONNECT_META } from "@/lib/steps";
+import { RemindPause } from "@/app/(admin)/a/[code]/remind-pause";
+import { ManualAckPanel, type ManualAckItem } from "@/app/(admin)/a/[code]/manual-ack-panel";
+import { ADMIN_ACK_KEYS, CONNECT_META, SIMPLE_CONNECT_META } from "@/lib/steps";
 import { differenceInHours } from "date-fns";
 import { buildTodos, hasClientDone, nextAgencyStep, nextClientStep } from "@/lib/todo";
 import { ko } from "@/content/ko";
@@ -37,9 +39,7 @@ export function ProjectStatus({
     .filter(
       (step) =>
         step.status === "client_done" &&
-        (step.verify_result?.code === "await_admin_first" ||
-          step.verify_result?.code === "await_admin_ack" ||
-          (step.verify_result?.admin_first_ack === "not_came" && step.verify_result?.code === "check_invite")),
+        (step.verify_result?.code === "await_admin_first" || step.verify_result?.code === "await_admin_ack"),
     )
     .map((step) => ({
       stepId: step.id,
@@ -48,6 +48,21 @@ export function ProjectStatus({
       hoursWaiting: differenceInHours(new Date(), new Date(step.verify_result?.first_failed_at ?? step.checked_at ?? step.updated_at)),
       notCame: step.verify_result?.admin_first_ack === "not_came",
       came: step.verify_result?.admin_first_ack === "came",
+    }));
+
+  // API 로 확인할 수 없는 의뢰인 단계(범위 확인·도메인 연결)의 완료 요청 — 단계 탭에서 행을 찾지 않고 여기서 한 번에
+  const manualItems: ManualAckItem[] = steps
+    .filter(
+      (step) =>
+        step.status === "client_done" &&
+        step.owner_side === "client" &&
+        step.verify_type === "manual" &&
+        !ADMIN_ACK_KEYS.has(step.key),
+    )
+    .map((step) => ({
+      stepId: step.id,
+      title: step.title,
+      hoursWaiting: differenceInHours(new Date(), new Date(step.checked_at ?? step.updated_at)),
     }));
 
   const lastSeen = guests
@@ -115,7 +130,9 @@ export function ProjectStatus({
         <span className="text-xs font-medium text-muted-foreground">{copy.myNext}</span>
         <span>{myNext}</span>
       </div>
+      <RemindPause projectId={project.id} code={project.code} pausedUntil={project.remind_paused_until} tier={project.support_tier} />
       <AckPanel items={ackItems} code={project.code} />
+      <ManualAckPanel items={manualItems} code={project.code} />
       <div className="flex flex-col gap-1.5 sm:col-span-2">
         <span className="text-xs font-medium text-muted-foreground">{ko.admin.todo.title}</span>
         <TodoList code={project.code} items={todos} />

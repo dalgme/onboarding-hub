@@ -45,8 +45,18 @@ export function ConnectFlow({
   // 클라이언트에서 step.key로 직접 조회한다.
   const meta = CONNECT_META[step.key];
   const router = useRouter();
+  // 되돌림(한 가지만 더)은 원인이 있는 단계로 바로 데려간다
+  const returnedCode = step.status === "returned" ? step.verify_result?.code : undefined;
   const [stage, setStage] = useState<Stage>(
-    step.status === "client_done" ? "verify" : currentSlug ? "invite" : "create",
+    returnedCode === "no_slug" || returnedCode === "org_not_found" || returnedCode === "personal_account"
+      ? "slug"
+      : returnedCode
+        ? "invite"
+        : step.status === "client_done"
+          ? "verify"
+          : currentSlug
+            ? "invite"
+            : "create",
   );
   const [verifying, startVerify] = useTransition();
   const [lastResult, setLastResult] = useState<VerifyResult | null>(
@@ -234,6 +244,26 @@ export function ConnectFlow({
                     ? ko.stepDetail.verifyErrorHint
                     : ko.stepDetail.verifyNotFoundHint)}
               </p>
+            ) : null}
+            {/* 의뢰인이 고칠 일이면 문장 옆에 바로 누를 것을 둔다 — 「위 이메일」을 찾아 헤매지 않게 */}
+            {lastResult && (lastResult.code === "check_invite" || lastResult.code === "wrong_role") && currentSlug ? (
+              <div className="flex flex-col gap-2">
+                {lastResult.code === "wrong_role" ? (
+                  <p className="rounded-md bg-warning/10 px-3 py-2 text-sm font-medium text-warning">
+                    {ko.stepDetail.inviteRole(meta.roleName)}
+                  </p>
+                ) : (
+                  <CopyButton value={inviteEmail} label={ko.stepDetail.inviteCopyEmail} size="lg" className="w-full" />
+                )}
+                <a
+                  href={meta.inviteUrl(currentSlug)}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-center text-sm font-medium text-primary underline"
+                >
+                  {ko.stepDetail.inviteOpenPage}
+                </a>
+              </div>
             ) : null}
             <Button
               type="button"

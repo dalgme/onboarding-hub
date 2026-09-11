@@ -31,6 +31,8 @@ export function StickyActions({
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [checked, setChecked] = useState<ReadonlySet<number>>(new Set());
   const checklist = DONE_CHECKLIST[step.key] ?? null;
+  // 「완료했습니다」를 두 번 눌렀는데도 확인이 안 됐다 — 세 번째 시도보다 화면공유가 빠르다
+  const helpFirst = (step.verify_result?.client_attempts ?? 0) >= 2 && step.status !== "verified";
   const [notice, setNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -261,8 +263,8 @@ export function StickyActions({
                 </Button>
                 <Button
                   type="button"
-                  variant="secondary"
-                  className="flex-1"
+                  variant={helpFirst ? "default" : "secondary"}
+                  className={helpFirst ? "order-first flex-1" : "flex-1"}
                   disabled={pending}
                   onClick={() =>
                     run(

@@ -7,6 +7,7 @@ import { classify, isVerifyCode, ownerOf, type VerifyOwner } from "@/lib/verify/
 import { ADMIN_ACK_KEYS } from "@/lib/steps";
 import { pushAdmin, minuteOf } from "@/lib/notify";
 import { onStepVerified, onVerifyClientCause } from "@/lib/outbox";
+import { advanceProjectStatus } from "@/lib/lifecycle";
 import { ko } from "@/content/ko";
 import { redact } from "@/lib/redact";
 import type { StepStatus, VerifyResult, VerifyType } from "@/lib/database.types";
@@ -109,9 +110,12 @@ function withSchedule(
   }
   // 최초 실패 시각은 「같은 원인이 이어지는 동안」 유지한다. 중간에 낀 일시 오류(error)는
   // 원인을 바꾸지 않으므로 리셋하지 않는다 — 리셋되면 재요청 카드가 새 키로 다시 만들어진다
+  // 의뢰인이 다시 「완료했습니다」를 누른 것은 새 사이클이다 — 같은 원인이어도 에폭을 새로 잡아야
+  // 재요청 문구가 중복 키로 조용히 사라지지 않고, 되돌림 시각도 이번 클릭 기준이 된다
   const sameCause =
     previous !== null &&
     previous.status !== "verified" &&
+    !(trigger === "client" && countsAsAttempt) &&
     (result.status === "error" ||
       previous.status === "error" ||
       (previous.code ?? null) === (result.code ?? null));
@@ -144,10 +148,21 @@ export async function runVerification(
   const result = withSchedule(computed, step.verify_result, trigger, step.status === "client_done");
 
   const admin = createAdminClient();
+  // 의뢰인이 고칠 것이 확정된 원인(주소 없음·조직 없음·개인 계정·역할)은 그 자리에서 「한 가지만 더」로
+  // 되돌린다. check_invite 는 초대 반영 지연일 수 있어 48시간 뒤 tick 이 되돌린다(§4-4)
+  const RETURN_NOW = new Set(["no_slug", "org_not_found", "personal_account", "wrong_role"]);
+  const returnNow = step.status === "client_done" && RETURN_NOW.has(result.code ?? "");
+  // 되돌린 뒤 원인이 내 쪽으로 넘어왔으면(초대가 보이기 시작함·내 메일함 차례) 「한 가지만 더」를 거둔다.
+  // 일시 오류(system)로는 오가지 않는다 — 포털이 깜빡이면 안 된다
+  const unreturn = step.status === "returned" && result.status !== "verified" && ownerOf(result) === "admin";
   const update =
     result.status === "verified"
       ? { verify_result: result, status: "verified" as const, verified_at: result.checked_at }
-      : { verify_result: result };
+      : returnNow
+        ? { verify_result: result, status: "returned" as const }
+        : unreturn
+          ? { verify_result: result, status: "client_done" as const }
+          : { verify_result: result };
   // CAS: 내가 읽은 결과 위에만 쓴다. tick·화면 열림·의뢰인 클릭이 같은 단계를 동시에
   // 돌 수 있다 — 0행이면 다른 실행이 이긴 것이므로 알림·전이도 그쪽 몫이다
   let query = admin.from("steps").update(update).eq("id", step.id);
@@ -188,12 +203,15 @@ export async function runVerification(
   };
   if (result.status === "verified") {
     after(async () => {
+      // 문구를 먼저 만들고, 푸시는 「카드가 있다/없다」를 정확히 말한다 — 없는 카드를 가리키지 않는다
+      const card = await onStepVerified(stepInfo, result.checked_at, trigger);
       await pushAdmin({
         ...base,
         dedupeKey: `verify_event:${step.id}:verified:${minuteOf(result.checked_at)}`,
-        ...ko.push.autoVerified(project.name, step.title),
+        ...ko.push.autoVerified(project.name, step.title, card === "created"),
+        url: card === "created" ? "/a#outbox" : `/a/${project.code}`,
       });
-      await onStepVerified(stepInfo, result.checked_at, trigger);
+      await advanceProjectStatus(project.id);
     });
   } else if (result.status === "error" && trigger !== "admin") {
     const owner: VerifyOwner | null = ownerOf(result);
@@ -267,7 +285,7 @@ export async function reverifyStale(options: {
     let query = admin
       .from("steps")
       .select("id, verify_result, projects!inner(status)")
-      .eq("status", "client_done")
+      .in("status", ["client_done", "returned"])
       .in("verify_type", ["github", "vercel", "supabase"])
       .neq("projects.status", "closed")
       .limit(50);
@@ -309,4 +327,16 @@ export async function markAwaitAdminAck(stepId: string): Promise<void> {
     .update({ verify_result: classify("await_admin_ack", "초대는 내 메일함으로 온다 — 확인 필요") })
     .eq("id", step.id)
     .eq("status", "client_done");
+}
+
+// 완료 요청 상태의 단계를 「한 가지만 더」로 되돌린다 (tick 의 48h 판정·관리자 「안 왔음」이 부른다)
+export async function returnStep(stepId: string): Promise<boolean> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("steps")
+    .update({ status: "returned" })
+    .eq("id", stepId)
+    .eq("status", "client_done")
+    .select("id");
+  return (data?.length ?? 0) > 0;
 }

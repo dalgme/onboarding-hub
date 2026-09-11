@@ -12,7 +12,8 @@ import { normalizeSlug } from "@/lib/slug";
 import { buildMagicLinkUrl } from "@/lib/magic-link";
 import { preflightBlockReason } from "@/lib/preflight";
 import { onAdminNotCame, onAdminReplied, onStepVerified, portalUrl, recordCredentialsSent } from "@/lib/outbox";
-import { runVerification } from "@/lib/verify/run";
+import { returnStep, runVerification } from "@/lib/verify/run";
+import { advanceProjectStatus, onLinkPinned, onScopeAgreed } from "@/lib/lifecycle";
 import { classify } from "@/lib/verify/types";
 import { CONNECT_META } from "@/lib/steps";
 import { after } from "next/server";
@@ -38,6 +39,9 @@ const createProjectSchema = z.object({
   clientName: z.string().trim().min(1).max(100),
   clientEmail: z.email(),
   supportTier: z.enum(["self", "assisted"]),
+  // 스택 선택: AI 없는 의뢰면 Anthropic 단계는 처음부터 「건너뜀」, 선택 단계는 여기서 같이 넣는다
+  includeAi: z.boolean().default(true),
+  optionalKeys: z.array(z.string()).default([]),
 });
 
 export async function createProject(
@@ -50,7 +54,7 @@ export async function createProject(
       message: parsed.error.issues[0]?.message ?? ko.common.error,
     };
   }
-  const { code, name, clientName, clientEmail, supportTier } = parsed.data;
+  const { code, name, clientName, clientEmail, supportTier, includeAi, optionalKeys } = parsed.data;
 
   const supabase = await createClient();
   const { data: project, error } = await supabase
@@ -73,9 +77,15 @@ export async function createProject(
     };
   }
 
-  // 온보딩 단계를 템플릿에서 복사해 채운다
+  // 온보딩 단계를 템플릿에서 복사해 채운다 (+ 고른 선택 단계, AI 없으면 Anthropic 은 건너뜀)
+  const optional = OPTIONAL_STEP_TEMPLATES.filter((template) => optionalKeys.includes(template.key));
+  const firstAgencyIndex = STEP_TEMPLATE.findIndex((template) => template.owner_side === "agency");
+  const templates =
+    firstAgencyIndex < 0
+      ? [...STEP_TEMPLATE, ...optional]
+      : [...STEP_TEMPLATE.slice(0, firstAgencyIndex), ...optional, ...STEP_TEMPLATE.slice(firstAgencyIndex)];
   const { error: stepsError } = await supabase.from("steps").insert(
-    STEP_TEMPLATE.map((template, index) => ({
+    templates.map((template, index) => ({
       project_id: project.id,
       order_index: index,
       key: template.key,
@@ -83,6 +93,7 @@ export async function createProject(
       description_md: template.description_md,
       owner_side: template.owner_side,
       verify_type: template.verify_type,
+      status: !includeAi && template.key === "connect-anthropic" ? ("skipped" as const) : ("todo" as const),
     })),
   );
   if (stepsError) return { ok: false, message: ko.common.error };
@@ -94,7 +105,8 @@ export async function createProject(
   if (guestError) return { ok: false, message: ko.common.error };
 
   revalidatePath("/a");
-  redirect(`/a/${code}`);
+  // 다음 할 일은 접속 정보 발급이다 — 설정 탭으로 바로 데려간다
+  redirect(`/a/${code}?tab=settings`);
 }
 
 const updateProjectSchema = z.object({
@@ -119,6 +131,11 @@ export async function updateProject(
   const data = parsed.data;
 
   const supabase = await createClient();
+  const { data: before } = await supabase
+    .from("projects")
+    .select("client_email")
+    .eq("id", data.projectId)
+    .maybeSingle();
   const { error } = await supabase
     .from("projects")
     .update({
@@ -137,6 +154,18 @@ export async function updateProject(
     .eq("id", data.projectId);
 
   if (error) return { ok: false, message: ko.common.error };
+  // 이메일 오타를 고쳤는데 접근 목록이 옛 이메일이면 의뢰인은 로그인 뒤 빈 화면을 본다 —
+  // 아직 한 번도 들어오지 않은 게스트 행만 조용히 따라간다(들어온 적 있는 행은 사람이 정리한다)
+  const oldEmail = before?.client_email?.toLowerCase();
+  const newEmail = data.clientEmail.toLowerCase();
+  if (oldEmail && oldEmail !== newEmail) {
+    await supabase
+      .from("project_guests")
+      .update({ email: newEmail })
+      .eq("project_id", data.projectId)
+      .eq("email", oldEmail)
+      .is("last_seen_at", null);
+  }
   revalidateProject(data.code);
   return { ok: true };
 }
@@ -202,17 +231,40 @@ export async function adminSetStepStatus(
   const { stepId, code, status } = parsed.data;
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const now = new Date().toISOString();
+  const { data: updated, error } = await supabase
     .from("steps")
     .update({
       status,
       blocked_reason: null,
-      verified_at: status === "verified" ? new Date().toISOString() : null,
+      verified_at: status === "verified" ? now : null,
       checked_at: status === "todo" ? null : undefined,
+      // 대기로 되돌리면 지난 확인 결과(원인 코드·에폭)도 비운다 — 다음 완료 요청은 새 사이클이다
+      verify_result: status === "todo" ? null : undefined,
     })
-    .eq("id", stepId);
+    .eq("id", stepId)
+    .select("id, key, title, project_id, projects(id, code, name, client_name)")
+    .maybeSingle();
 
   if (error) return { ok: false, message: ko.common.error };
+  // 끝난 단계가 늘었다 — 프로젝트 상태가 앞으로 갈 조건인지 본다.
+  // 내가 손으로 「확인 완료로」 누른 것도 확인이다 — 「확인됐습니다 + 다음은 …」 문구를 똑같이 올린다
+  const project = (updated?.projects ?? null) as { id: string; code: string; name: string; client_name: string } | null;
+  if ((status === "verified" || status === "skipped") && updated && project) {
+    const stepInfo = {
+      id: updated.id,
+      key: updated.key,
+      title: updated.title,
+      projectId: project.id,
+      projectCode: project.code,
+      projectName: project.name,
+      clientName: project.client_name,
+    };
+    after(async () => {
+      if (status === "verified") await onStepVerified(stepInfo, now, "admin");
+      await advanceProjectStatus(project.id);
+    });
+  }
   revalidateProject(code);
   return { ok: true };
 }
@@ -237,17 +289,23 @@ export async function addOptionalStep(
   if (!template) return { ok: false, message: ko.common.error };
 
   const supabase = await createClient();
-  const { data: lastStep } = await supabase
+  // 첫 제작자 단계(개발 진행) 앞에 끼워 넣는다 — 끝에 붙이면 순서 기반 자동화(다음 단계·전이·리마인드)가
+  // 인수인계 뒤에 온 연결 단계를 못 본다. 뒤 단계는 하나씩 밀어 준다(프로젝트당 10개 안팎)
+  const { data: existing } = await supabase
     .from("steps")
-    .select("order_index")
+    .select("id, order_index, owner_side")
     .eq("project_id", projectId)
-    .order("order_index", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order("order_index", { ascending: true });
+  const rows = existing ?? [];
+  const firstAgency = rows.find((row) => row.owner_side === "agency");
+  const insertAt = firstAgency ? firstAgency.order_index : (rows.at(-1)?.order_index ?? -1) + 1;
+  for (const row of [...rows].filter((row) => row.order_index >= insertAt).sort((a, b) => b.order_index - a.order_index)) {
+    await supabase.from("steps").update({ order_index: row.order_index + 1 }).eq("id", row.id);
+  }
 
   const { error } = await supabase.from("steps").insert({
     project_id: projectId,
-    order_index: (lastStep?.order_index ?? -1) + 1,
+    order_index: insertAt,
     key: template.key,
     title: template.title,
     description_md: template.description_md,
@@ -295,6 +353,13 @@ export async function addLink(
     is_pinned: isPinned,
   });
   if (error) return { ok: false, message: ko.common.error };
+  if (isPinned) {
+    const { data: project } = await supabase.from("projects").select("client_name").eq("id", projectId).maybeSingle();
+    if (project) {
+      const info = { id: projectId, code, client_name: project.client_name };
+      after(() => onLinkPinned(info, { label, url }));
+    }
+  }
   revalidateProject(code);
   return { ok: true };
 }
@@ -333,11 +398,20 @@ export async function toggleLinkPin(
   if (!parsed.success) return { ok: false, message: ko.common.error };
 
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data: link, error } = await supabase
     .from("links")
     .update({ is_pinned: parsed.data.isPinned })
-    .eq("id", parsed.data.linkId);
+    .eq("id", parsed.data.linkId)
+    .select("label, url, project_id, projects(client_name)")
+    .maybeSingle();
   if (error) return { ok: false, message: ko.common.error };
+  // 고정을 켰다 = 의뢰인이 볼 주소가 생겼다 — 안내 문구
+  const row = link as unknown as { label: string; url: string; project_id: string; projects: { client_name: string } | null } | null;
+  if (parsed.data.isPinned && row?.projects) {
+    const info = { id: row.project_id, code: parsed.data.code, client_name: row.projects.client_name };
+    const target = { label: row.label, url: row.url };
+    after(() => onLinkPinned(info, target));
+  }
   revalidateProject(parsed.data.code);
   return { ok: true };
 }
@@ -364,11 +438,31 @@ export async function saveScope(
   };
   if (agree) update.scope_agreed_at = new Date().toISOString();
 
+  const { data: before } = await supabase
+    .from("projects")
+    .select("scope_agreed_at, client_name")
+    .eq("id", projectId)
+    .maybeSingle();
   const { error } = await supabase
     .from("projects")
     .update(update)
     .eq("id", projectId);
   if (error) return { ok: false, message: ko.common.error };
+  if (agree) {
+    // 범위 확정은 곧 「작업 범위 확인」 단계의 확인이다 — 같은 사건을 두 번 누르게 하지 않는다
+    await supabase
+      .from("steps")
+      .update({ status: "verified", verified_at: new Date().toISOString(), blocked_reason: null })
+      .eq("project_id", projectId)
+      .eq("key", "scope-review")
+      .in("status", ["todo", "doing", "client_done", "returned", "blocked"]);
+    after(() => advanceProjectStatus(projectId));
+  }
+  // 처음 확정할 때만 — 「범위를 올렸습니다」 카톡 문구
+  if (agree && before && !before.scope_agreed_at) {
+    const info = { id: projectId, code, client_name: before.client_name };
+    after(() => onScopeAgreed(info));
+  }
   revalidateProject(code);
   return { ok: true };
 }
@@ -791,7 +885,9 @@ export async function ackInvite(
     verify_result: import("@/lib/database.types").VerifyResult | null;
     projects: { id: string; code: string; name: string; client_name: string; github_org: string | null; vercel_team: string | null; supabase_org: string | null } | null;
   } | null;
-  if (!row?.projects || row.status !== "client_done") return { ok: false, message: ko.common.error };
+  if (!row?.projects || (row.status !== "client_done" && row.status !== "returned")) {
+    return { ok: false, message: ko.common.error };
+  }
   const now = new Date();
 
   if (came) {
@@ -801,8 +897,9 @@ export async function ackInvite(
         .from("steps")
         .update({ status: "verified", verified_at: now.toISOString(), verify_result: { ...classify("member_active"), admin_first_ack: "came" } })
         .eq("id", row.id);
-      // 확인됐다 — 「확인됐습니다 + 다음 안내」 카톡 문구
+      // 확인됐다 — 「확인됐습니다 + 다음 안내」 카톡 문구, 프로젝트 상태 전이
       await onStepVerified(stepInfo, now.toISOString(), "admin");
+      await advanceProjectStatus(row.projects.id);
       revalidateProject(code);
       return { ok: true };
     }
@@ -842,6 +939,8 @@ export async function ackInvite(
     admin_first_ack: "not_came" as const,
   };
   await admin.from("steps").update({ verify_result: next }).eq("id", row.id);
+  // 의뢰인이 고칠 차례다 — 포털 「다음 할 일」 최상단에 올라가도록 되돌린다
+  await returnStep(row.id);
 
   const { data: adminRow } = await admin.from("admins").select("email").limit(1).maybeSingle();
   const meta = CONNECT_META[row.key];
@@ -917,4 +1016,21 @@ export async function revokeGuestAccess(
   }
   revalidateProject(code);
   return { ok: true, removedGuests: guests?.length ?? 0, deletedUsers, keptUsers: kept };
+}
+
+
+// ── 리마인드 보류 ────────────────────────────────────────────────
+// 카톡·전화로 일정을 들었을 때 누른다. days=null 이면 해제
+const pauseSchema = z.object({ projectId: z.uuid(), code: z.string().min(1), days: z.number().int().min(1).max(60).nullable() });
+
+export async function pauseReminders(input: z.infer<typeof pauseSchema>): Promise<ActionResult> {
+  const parsed = pauseSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: ko.common.error };
+  const { projectId, code, days } = parsed.data;
+  const supabase = await createClient();
+  const until = days ? new Date(Date.now() + days * 24 * 60 * 60_000).toISOString() : null;
+  const { error } = await supabase.from("projects").update({ remind_paused_until: until }).eq("id", projectId);
+  if (error) return { ok: false, message: ko.common.error };
+  revalidateProject(code);
+  return { ok: true };
 }

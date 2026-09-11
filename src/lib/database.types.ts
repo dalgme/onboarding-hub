@@ -8,7 +8,8 @@ export type StepStatus =
   | "client_done"
   | "verified"
   | "blocked"
-  | "skipped";
+  | "skipped"
+  | "returned";
 export type AuthorSide = "admin" | "client";
 export type CommentKind = "question" | "request";
 

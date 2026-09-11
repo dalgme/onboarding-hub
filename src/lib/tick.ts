@@ -5,6 +5,7 @@ import { pushAdmin, minuteOf, dayKst } from "@/lib/notify";
 import { CONNECT_META, SIMPLE_CONNECT_META } from "@/lib/steps";
 import type { VerifyResult } from "@/lib/database.types";
 import { sweepOutbox } from "@/lib/outbox";
+import { remindStalled, type ReminderReport } from "@/lib/reminders";
 import { ko } from "@/content/ko";
 
 // 시계 하나. Vercel Cron 이 15분마다 /api/cron/tick 을 부르고, 그 라우트는 이 함수만 부른다.
@@ -25,6 +26,8 @@ export interface TickReport {
   outbox: { cleared: number; superseded: number; stalePush: boolean };
   reminded: number;
   digest: boolean;
+  daily: boolean;
+  reminders: ReminderReport;
   heartbeat: "sent" | "skipped" | "failed";
   errors: string[];
 }
@@ -169,6 +172,7 @@ async function digestUnacked(now: Date): Promise<boolean> {
     .from("notices")
     .select("created_at")
     .eq("kind", "digest")
+    .like("dedupe_key", "todo_digest:%") // 09:00 요약(daily:)과 섞이지 않게
     .eq("channel", "push")
     .in("status", ["claimed", "sent"])
     .order("created_at", { ascending: false })
@@ -179,6 +183,45 @@ async function digestUnacked(now: Date): Promise<boolean> {
     dedupeKey: `todo_digest:${minuteOf(now)}`,
     kind: "digest",
     ...ko.push.digest(urgent.length),
+    url: "/a",
+  });
+  return outcome === "sent";
+}
+
+// 09:00 KST 이후 첫 tick 에 하루 요약 1건 — 보낼 카톡·내 차례·미답 질문·막힘. 전부 0이면 조용하다
+const DAILY_HOUR_KST = 9;
+const DAILY_END_KST = 21;
+
+async function dailySummary(now: Date): Promise<boolean> {
+  const hour = new Date(now.getTime() + 9 * 60 * 60_000).getUTCHours();
+  if (hour < DAILY_HOUR_KST || hour >= DAILY_END_KST) return false; // 하루 요약은 09~21시 KST 에만
+  const admin = createAdminClient();
+  const [{ count: outbox }, { data: steps }, { count: unread }] = await Promise.all([
+    admin.from("notices").select("id", { count: "exact", head: true }).eq("channel", "outbox").eq("status", "pending"),
+    admin
+      .from("steps")
+      .select("status, verify_result, projects!inner(status)")
+      .in("status", ["client_done", "blocked"])
+      .neq("projects.status", "closed"),
+    admin
+      .from("comments")
+      .select("id", { count: "exact", head: true })
+      .eq("author_side", "client")
+      .is("read_at", null)
+      .is("deleted_at", null),
+  ]);
+  const rows = (steps ?? []) as { status: string; verify_result: VerifyResult | null }[];
+  const myTurn = rows.filter((row) => {
+    const code = row.verify_result?.code;
+    return row.status === "client_done" && (code === "pending_accept" || code === "await_admin_first" || code === "await_admin_ack") && row.verify_result?.admin_first_ack !== "not_came";
+  }).length;
+  const blocked = rows.filter((row) => row.status === "blocked").length;
+  const counts = { outbox: outbox ?? 0, myTurn, unread: unread ?? 0, blocked };
+  if (Object.values(counts).every((value) => value === 0)) return false;
+  const outcome = await pushAdmin({
+    dedupeKey: `daily:${dayKst(now)}`,
+    kind: "digest",
+    ...ko.push.daily(counts),
     url: "/a",
   });
   return outcome === "sent";
@@ -207,6 +250,8 @@ export async function runTick(now: Date): Promise<TickReport> {
     outbox: { cleared: 0, superseded: 0, stalePush: false },
     reminded: 0,
     digest: false,
+    daily: false,
+    reminders: { created: 0, skipped: {} },
     heartbeat: "skipped",
     errors: [],
   };
@@ -273,6 +318,17 @@ export async function runTick(now: Date): Promise<TickReport> {
     } catch (cause) {
       report.errors.push(`digest: ${errorText(cause)}`);
     }
+    try {
+      report.daily = await dailySummary(now);
+    } catch (cause) {
+      report.errors.push(`daily: ${errorText(cause)}`);
+    }
+  }
+  // 5c) 미진행 리마인드 문구 (평일 10~18시 KST, 정지 조건 7개는 함수 안에서)
+  try {
+    report.reminders = await remindStalled(now);
+  } catch (cause) {
+    report.errors.push(`reminders: ${errorText(cause)}`);
   }
 
   // 6) 완주 기록 + 외부 heartbeat

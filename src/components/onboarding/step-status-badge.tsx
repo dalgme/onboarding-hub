@@ -12,10 +12,13 @@ const VARIANTS: Record<
   verified: "success",
   blocked: "destructive",
   skipped: "outline",
+  returned: "warning",
 };
 
-function StepStatusBadge({ status }: { status: StepStatus }) {
-  return <Badge variant={VARIANTS[status]}>{ko.status.step[status]}</Badge>;
+// side="admin" 이면 관리자식 이름(되돌림)을 쓴다. 의뢰인에게는 「한 가지만 더」
+function StepStatusBadge({ status, side = "client" }: { status: StepStatus; side?: "client" | "admin" }) {
+  const label = (side === "admin" && ko.status.stepAdmin[status]) || ko.status.step[status];
+  return <Badge variant={VARIANTS[status]}>{label}</Badge>;
 }
 
 export { StepStatusBadge };
