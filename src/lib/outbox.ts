@@ -409,12 +409,14 @@ export async function sweepOutbox(
     const step = row.step_id ? projectSteps.find((item) => item.id === row.step_id) : undefined;
     let needed = true;
     if (row.kind === "next_step") {
-      // 의뢰인이 그 뒤 포털에 들어왔거나, 카드가 가리킨 그 단계를 시작했으면 안내는 필요 없다
+      // 의뢰인이 그 뒤 포털에 들어왔거나, 카드가 가리킨 그 단계를 스스로 시작했으면 안내는 필요 없다.
+      // 되돌림(한 가지만 더)은 「시작했다」가 아니다 — 고쳐 달라고 기다리는 중이라 안내가 더 필요하다
       const seen = lastSeenByProject.get(row.project_id);
       const pointedId = row.detail?.startsWith("next:") ? row.detail.slice(5) : null;
       const pointed = pointedId && pointedId !== "none" ? projectSteps.find((item) => item.id === pointedId) : null;
-      const stillTodo = pointedId === "none" ? true : Boolean(pointed && pointed.status === "todo");
-      needed = !(seen && seen > row.created_at) && stillTodo;
+      const stillWaiting =
+        pointedId === "none" ? true : Boolean(pointed && (pointed.status === "todo" || pointed.status === "returned"));
+      needed = !(seen && seen > row.created_at) && stillWaiting;
     } else if (row.kind === "rerequest") {
       // 일시 오류(system)가 코드를 잠깐 덮어써도 카드는 거두지 않는다 — 원인이 사라진 것이 아니다
       const current = step?.verify_result;
