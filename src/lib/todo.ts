@@ -3,6 +3,7 @@ import { CONNECT_META, SIMPLE_CONNECT_META } from "@/lib/steps";
 import { ownerOf, isVerifyCode } from "@/lib/verify/types";
 import { differenceInHours } from "date-fns";
 import { ko } from "@/content/ko";
+import { adminCodeText } from "@/lib/verify/copy";
 import type {
   VerifyResult,
   CommentRow,
@@ -105,9 +106,10 @@ export function buildTodos(
         continue;
       }
       const hours = differenceInHours(now, new Date(result?.first_failed_at ?? step.checked_at ?? now));
-      items.push({ key: `invite-${step.key}`, label: copy.awaitAdmin(service, hours), tab: "steps", urgent: true });
+      const own = ko.admin.ackByKey[step.key];
+      items.push({ key: `invite-${step.key}`, label: own ? own.todo(hours) : copy.awaitAdmin(service, hours), tab: "steps", urgent: true });
     } else if (ownerOf(result) === "client" && isVerifyCode(code)) {
-      items.push({ key: `client-${step.key}`, label: copy.clientCause(service, ko.admin.verifyCode[code]), tab: "steps", urgent: false });
+      items.push({ key: `client-${step.key}`, label: copy.clientCause(service, adminCodeText(code, step.key) ?? code), tab: "steps", urgent: false });
     } else if (ownerOf(result) === "system") {
       if ((result?.auto_checks ?? 0) >= 3) {
         items.push({ key: `system-${step.key}`, label: copy.systemStuck(service), tab: "steps", urgent: false });
@@ -203,12 +205,12 @@ export function onboardingClientSteps<T extends { owner_side: string; order_inde
     .sort((a, b) => a.order_index - b.order_index);
 }
 
+// 되돌림(「한 가지만 더」)이 먼저다 — 앞쪽에 손대지 않은 단계가 있어도, 고쳐 달라고 기다리는 것이 최상단(§5)
 export function nextClientStep(steps: StepLite[]): StepLite | null {
-  return (
-    [...steps]
-      .sort((a, b) => a.order_index - b.order_index)
-      .find((step) => step.owner_side === "client" && CLIENT_OPEN.has(step.status)) ?? null
-  );
+  const open = [...steps]
+    .sort((a, b) => a.order_index - b.order_index)
+    .filter((step) => step.owner_side === "client" && CLIENT_OPEN.has(step.status));
+  return open.find((step) => step.status === "returned") ?? open[0] ?? null;
 }
 
 // 의뢰인이 완료 요청을 보내고 내 확인을 기다리는 단계가 있는가

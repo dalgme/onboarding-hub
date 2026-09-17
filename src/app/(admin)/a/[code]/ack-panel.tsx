@@ -6,9 +6,11 @@ import { MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ackInvite } from "@/app/(admin)/a/actions";
 import { ko } from "@/content/ko";
+import { ackCopy } from "@/lib/verify/copy";
 
 export interface AckItem {
   stepId: string;
+  stepKey: string;
   service: string;
   title: string;
   hoursWaiting: number;
@@ -24,11 +26,12 @@ export function AckPanel({ items, code }: { items: AckItem[]; code: string }) {
   const copy = ko.admin.ack;
   if (items.length === 0) return null;
 
-  function act(stepId: string, came: boolean) {
+  function act(item: AckItem, came: boolean) {
     setNote(null);
+    const own = ackCopy(item.stepKey);
     startTransition(async () => {
-      const result = await ackInvite({ stepId, code, came });
-      setNote(result.ok ? (result.message ?? (came ? copy.cameDone : copy.notCameDone)) : (result.message ?? ko.common.error));
+      const result = await ackInvite({ stepId: item.stepId, code, came });
+      setNote(result.ok ? (result.message ?? (came ? own.cameDone : own.notCameDone)) : (result.message ?? ko.common.error));
       router.refresh();
     });
   }
@@ -40,33 +43,36 @@ export function AckPanel({ items, code }: { items: AckItem[]; code: string }) {
         {copy.title}
       </span>
       <ul className="flex flex-col gap-1.5">
-        {items.map((item) => (
+        {items.map((item) => {
+          const own = ackCopy(item.stepKey);
+          return (
           <li key={item.stepId} className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-sm">
-            <span className="font-medium">{copy.question(item.service)}</span>
+            <span className="font-medium">{own.question(item.service)}</span>
             <span className="text-xs text-muted-foreground">
               {item.came ? copy.acceptedWaiting : item.notCame ? copy.waitingClient : copy.waiting(item.hoursWaiting)}
             </span>
             {item.came ? (
               <span className="ml-auto flex gap-1.5">
-                <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => act(item.stepId, false)}>
+                <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => act(item, false)}>
                   {copy.cameNotVisible}
                 </Button>
               </span>
             ) : null}
             {!item.came ? (
               <span className="ml-auto flex gap-1.5">
-                <Button type="button" size="sm" disabled={pending} onClick={() => act(item.stepId, true)}>
-                  {copy.came}
+                <Button type="button" size="sm" disabled={pending} onClick={() => act(item, true)}>
+                  {own.came}
                 </Button>
                 {!item.notCame ? (
-                  <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => act(item.stepId, false)}>
-                    {copy.notCame}
+                  <Button type="button" size="sm" variant="outline" disabled={pending} onClick={() => act(item, false)}>
+                    {own.notCame}
                   </Button>
                 ) : null}
               </span>
             ) : null}
           </li>
-        ))}
+          );
+        })}
       </ul>
       {note ? <p className="text-xs text-muted-foreground">{note}</p> : null}
     </div>

@@ -16,6 +16,8 @@ import { AssistedCard } from "@/components/onboarding/assisted-card";
 import { WorkLog } from "@/app/(guest)/p/[code]/work-log";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
+import { nextClientStep } from "@/lib/todo";
+import { clientCodeText } from "@/lib/verify/copy";
 
 const TABS = [
   { key: "tasks", label: ko.portal.tabTasks },
@@ -71,14 +73,7 @@ export default async function PortalHomePage({
     ]);
 
   const allSteps = steps ?? [];
-  const nextStep = allSteps.find(
-    (step) =>
-      step.owner_side === "client" &&
-      (step.status === "todo" ||
-        step.status === "doing" ||
-        step.status === "blocked" ||
-        step.status === "returned"),
-  );
+  const nextStep = nextClientStep(allSteps);
   const stepTitles = Object.fromEntries(
     allSteps.map((step) => [step.id, step.title]),
   );
@@ -148,10 +143,7 @@ export default async function PortalHomePage({
                 {nextStep.status === "returned" ? (
                   <p className="text-sm leading-relaxed text-muted-foreground">
                     <span className="font-medium text-foreground">{ko.stepDetail.returnedTitle} </span>
-                    {(nextStep.verify_result?.code &&
-                      (ko.stepDetail.verifyCodeHome[nextStep.verify_result.code] ??
-                        ko.stepDetail.verifyCode[nextStep.verify_result.code])) ??
-                      ko.stepDetail.returnedFallback}
+                    {clientCodeText(nextStep.verify_result?.code, nextStep.key, true) ?? ko.stepDetail.returnedFallback}
                   </p>
                 ) : null}
                 <Link

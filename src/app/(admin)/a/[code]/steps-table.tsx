@@ -117,7 +117,7 @@ export function StepsTable({
                 </td>
                 <td className="px-4 py-3">
                   {step.verify_type !== "manual" ? (
-                    <VerifyBadge result={step.verify_result} />
+                    <VerifyBadge result={step.verify_result} stepKey={step.key} />
                   ) : (
                     <span className="text-xs text-muted-foreground">—</span>
                   )}

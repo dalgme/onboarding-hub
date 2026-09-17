@@ -12,6 +12,7 @@ import { AssistChat } from "@/components/onboarding/assist-chat";
 import { StickyActions } from "@/components/onboarding/sticky-actions";
 import { CommentThread } from "@/components/comment/comment-thread";
 import { ko } from "@/content/ko";
+import { clientCodeText } from "@/lib/verify/copy";
 
 // 단계 상세 — 이 도구에서 가장 공들이는 화면.
 // 계정 연결 단계는 미니 스텝퍼(만들기 → 이름 → 초대 → 확인)로 진행한다.
@@ -84,8 +85,7 @@ export default async function StepDetailPage({
         {step.status === "returned" ? (
           <p className="rounded-md bg-warning/10 px-3 py-2 text-sm leading-relaxed text-foreground">
             <span className="font-medium">{ko.stepDetail.returnedTitle} </span>
-            {(step.verify_result?.code && ko.stepDetail.verifyCode[step.verify_result.code]) ??
-              ko.stepDetail.returnedFallback}
+            {clientCodeText(step.verify_result?.code, step.key) ?? ko.stepDetail.returnedFallback}
           </p>
         ) : null}
       </div>

@@ -68,8 +68,15 @@ export async function createOutbox(input: OutboxCreate): Promise<"created" | "du
     // 같은 주제의 pending 은 대체한다 (일일 상한 인덱스와 충돌하지 않게 삽입 전에).
     // 답글 알림은 답글마다 별개다 — 앞선 답글 본문을 지우지 않는다
     if (input.kind !== "admin_replied") {
-      // 재요청과 리마인드는 「같은 단계에 카드 1장」 — 종류가 달라도 서로 대체한다
-      const kinds: NoticeKind[] = input.kind === "rerequest" || input.kind === "reminder" ? ["rerequest", "reminder"] : [input.kind];
+      // 재요청과 리마인드는 「같은 단계에 카드 1장」 — 종류가 달라도 서로 대체한다.
+      // 확인됐다는 안내(next_step)는 그 단계의 재요청·리마인드도 함께 내린다 — 「확인 부탁」과
+      // 「확인됐습니다」가 다음 tick 까지 나란히 서 있지 않게
+      const kinds: NoticeKind[] =
+        input.kind === "rerequest" || input.kind === "reminder"
+          ? ["rerequest", "reminder"]
+          : input.kind === "next_step"
+            ? ["next_step", "rerequest", "reminder"]
+            : [input.kind];
       let supersede = admin
         .from("notices")
         .update({ status: "superseded" })
@@ -521,6 +528,25 @@ export async function sweepOutbox(
 
 // 내가 「초대 안 왔음」을 눌렀다 → 의뢰인에게 초대 확인을 부탁하는 문구. Vercel·Supabase·수동 단계 공통
 export async function onAdminNotCame(step: StepInfo, slug: string | null, adminEmail: string, now: Date): Promise<void> {
+  // 초대가 아닌 확인(서비스 계정) — 「초대 화면·이메일」 문구 대신 그 화면을 가리킨다
+  if (step.key === "anthropic-service-account") {
+    await createOutbox({
+      kind: "rerequest",
+      projectId: step.projectId,
+      stepId: step.id,
+      dedupeKey: `rerequest:${step.id}:not_came:${minuteOf(now)}`,
+      title: ko.outbox.titles.rerequestServiceAccount,
+      body: ko.outbox.rerequestServiceAccount({
+        client: step.clientName,
+        stepTitle: step.title,
+        settingsUrl: "https://platform.claude.com/settings/service-accounts",
+        stepUrl: `${portalUrl(step.projectCode)}/steps/${step.key}`,
+      }),
+      detail: "check_invite",
+      push: null,
+    });
+    return;
+  }
   const meta = CONNECT_META[step.key];
   const simple = SIMPLE_CONNECT_META[step.key];
   const serviceName = meta?.serviceName ?? simple?.serviceName ?? step.title;

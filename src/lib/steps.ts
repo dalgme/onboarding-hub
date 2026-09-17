@@ -81,9 +81,20 @@ export interface SimpleConnectMeta {
 // 의뢰인이 완료를 누르면 owner=admin(await_admin_ack) 이 되고, 대시보드에 「왔음/안 왔음」 2탭이 뜬다
 export const ADMIN_ACK_KEYS: ReadonlySet<string> = new Set([
   "connect-anthropic",
+  "anthropic-service-account",
   "connect-resend",
   "connect-solapi",
 ]);
+
+// 앞 단계를 건너뛰면 같이 건너뛰는 단계 — AI 없는 의뢰에서 「서비스 계정」만 남아 재촉되는 일을 막는다.
+// 위저드(`includeAi` 해제)와 단계 탭 「건너뜀으로」가 같은 표를 읽는다
+export const SKIP_TOGETHER: Record<string, readonly string[]> = {
+  "connect-anthropic": ["anthropic-service-account"],
+};
+
+export function skippedWith(key: string): readonly string[] {
+  return SKIP_TOGETHER[key] ?? [];
+}
 
 export const SIMPLE_CONNECT_META: Record<string, SimpleConnectMeta> = {
   "connect-anthropic": {
@@ -308,7 +319,7 @@ export const STEP_TEMPLATE: StepTemplate[] = [
 
 ### ③ 이후는 제가
 
-초대를 수락하면 제가 의뢰인 조직에서 API 키를 발급해 서비스에 연결합니다. 키는 의뢰인 조직 소유이므로, 작업 종료 후 제가 빠져도 서비스는 그대로 동작합니다.
+초대를 수락하면 제가 개발용 열쇠(API 키)를 발급해 개발을 시작합니다. 서비스가 운영에서 계속 쓸 열쇠는 사람 이름이 아니라 **서비스 전용 계정** 이름으로 만들어야 하는데, 그 계정은 다음 단계 **「Claude(AI) 서비스 계정 만들기」**에서 1분이면 만드실 수 있습니다.
 
 ### 자주 막히는 곳
 
@@ -316,6 +327,34 @@ export const STEP_TEMPLATE: StepTemplate[] = [
 - 크레딧 충전 없이 초대만 하면 나중에 AI 기능이 동작하지 않습니다. **충전 + 자동 충전 설정까지**가 이 단계입니다.
 - **자동 충전을 끄면** 어느 날 갑자기 AI 기능이 안 되는 일이 생깁니다. 서비스 오류가 아니라 크레딧 소진이니, 그런 일이 없도록 꼭 켜 주세요.
 - 결제 등록이 부담되면 「막혔어요」를 눌러 주세요. 예상 사용료를 먼저 정리해 드립니다.`,
+  },
+  {
+    key: "anthropic-service-account",
+    title: "Claude(AI) 서비스 계정 만들기",
+    owner_side: "client",
+    verify_type: "manual",
+    description_md: `앞 단계에서 저를 초대해 주신 덕분에 개발은 시작할 수 있습니다. 다만 **서비스가 운영 중에 계속 쓸 열쇠(API 키)**는 사람 이름으로 만들면 안 됩니다. 제 이름으로 만든 열쇠는 작업이 끝나 제가 조직에서 빠지는 순간 함께 멈추기 때문입니다.
+
+그래서 열쇠의 주인이 될 **서비스 전용 계정**을 하나 만들어 주셔야 합니다. 이 계정은 조직 관리자(의뢰인)만 만들 수 있어 부탁드립니다. **1분이면 끝납니다.**
+
+> AI 기능이 없는 의뢰라면 이 단계도 함께 건너뜁니다.
+
+### ① 만들기
+
+1. **[서비스 계정 화면 열기](https://platform.claude.com/settings/service-accounts)** — 새 탭으로 열립니다. 로그인이 필요하면 앞 단계에서 만든 계정으로 로그인합니다.
+2. 조직이 여러 개라면 **왼쪽 아래 계정 메뉴**에서 이 프로젝트의 조직이 선택되어 있는지 확인합니다. (왼쪽 위는 워크스페이스 선택이라 다릅니다.)
+3. **Create service account**(서비스 계정 만들기)를 누르고 이름을 적습니다. 서비스 이름 뒤에 \`-prod\` 를 붙이면 알아보기 쉽습니다. 예: \`shop-prod\`
+4. 끝입니다. 워크스페이스에 따로 추가하지 않으셔도 됩니다 — 기본 워크스페이스에는 자동으로 포함됩니다.
+
+### ② 이후는 제가
+
+만들어 주신 서비스 계정 이름으로 제가 운영용 열쇠를 발급해 서비스에 넣습니다. 열쇠 값은 의뢰인께 보내드리지도, 이 포털에 저장하지도 않습니다. 작업이 끝나 제가 빠져도 이 열쇠는 그대로 살아 있어 AI 기능이 멈추지 않습니다.
+
+### 자주 막히는 곳
+
+- **Service accounts 메뉴가 안 보이는 경우** — 다른 조직(개인 조직)에 들어와 있거나, 관리자(Admin)가 아닌 계정입니다. 앞 단계에서 조직을 직접 만드셨다면 관리자입니다. 왼쪽 아래 계정 메뉴에서 조직을 바꿔 보세요.
+- **Workload identity 라는 비슷한 화면** — 그 화면이 아닙니다. 주소가 settings/service-accounts 인지 확인해 주세요.
+- 앞 단계의 **자동 충전(Auto reload)** 이 켜져 있는지 이 김에 한 번 더 봐 주세요. 꺼져 있으면 개발 중에도 AI 기능이 갑자기 멈춥니다.`,
   },
   {
     key: "scope-review",
@@ -362,6 +401,7 @@ export const STEP_TEMPLATE: StepTemplate[] = [
     description_md: `개발이 끝나면 제가 서비스를 열고, 운영에 필요한 자료를 전달하는 단계입니다.
 
 - 운영 방법 안내 문서(README)와 월 고정비 정리를 전달드립니다.
+- AI 기능이 있다면, 서비스가 쓰는 열쇠(API 키)를 「서비스 계정」 이름으로 발급한 것으로 바꿔 두고 전달합니다. 제 이름으로 만든 개발용 열쇠는 이때 지웁니다.
 - 전달이 끝나면 제 계정은 세 서비스에서 모두 빠집니다. 이후 계정과 데이터는 온전히 의뢰인 소유입니다.`,
   },
 ];
@@ -375,6 +415,11 @@ export const DONE_CHECKLIST: Record<string, readonly string[]> = {
     "Billing에 결제 카드를 등록하고 크레딧을 충전했습니다",
     "같은 Billing 화면에서 자동 충전(Auto reload)을 켰습니다",
     "Members 화면에 초대한 이메일이 Pending(대기) 상태로 보이고, 역할은 Developer입니다",
+  ],
+  "anthropic-service-account": [
+    "이 프로젝트의 조직(개인 조직이 아닌)에서 만들었습니다 — 왼쪽 아래 계정 메뉴로 확인",
+    "Settings → Service accounts 목록에 새로 만든 서비스 계정이 보입니다",
+    "Billing의 자동 충전(Auto reload)이 켜져 있는 것을 다시 확인했습니다",
   ],
   "connect-resend": [
     "복사한 이메일로 팀 초대를 보냈고, 멤버 목록에 대기 중으로 보입니다",

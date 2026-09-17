@@ -141,7 +141,7 @@ async function remindAdminWaits(now: Date): Promise<number> {
       kind: "verify_event", // escalation 은 프로젝트·일 단위 상한 인덱스에 걸린다 — 단계별 재알림은 여기 두지 않는다
       projectId: project.id,
       stepId: row.id,
-      ...ko.push.adminWait(project.name, service, days, days >= 5),
+      ...(ko.admin.ackByKey[row.key]?.pushWait(project.name, days) ?? ko.push.adminWait(project.name, service, days, days >= 5)),
       url: `/a/${project.code}`,
     });
     if (outcome === "sent") sent += 1;

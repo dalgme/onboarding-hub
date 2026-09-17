@@ -13,10 +13,16 @@ export const OFFBOARD_CHECKLIST: OffboardItem[] = [
     detail: "README, 배포·운영 방법, 월 고정비 안내를 의뢰인에게 전달한다.",
   },
   {
+    key: "prod-key-owner",
+    title: "운영 Anthropic 키가 「서비스 계정」 키인지 확인",
+    detail:
+      "AI 기능이 있다면, 운영 환경변수(ANTHROPIC_API_KEY)의 키가 Console 「API keys」 목록에서 연결된 계정이 서비스 계정으로 표시되는지 본다. 내 이름(개인 키, 예: *-dev)이면 서비스 계정 키를 새로 발급해 교체·재배포한 뒤 다음으로. 개인 키는 내가 조직에서 나가는 순간 보관 처리되어 서비스가 그날 멈춘다. (실제 위험: 09-17 개발 시작 시 개인 키만 있었다)",
+  },
+  {
     key: "revoke-tokens",
     title: "발급받은 토큰·API 키 폐기",
     detail:
-      "이 프로젝트를 위해 별도로 발급한 토큰·키(예: 의뢰인 조직에서 내 이름으로 만든 테스트 키, 프로젝트 전용 배포 토큰)를 폐기한다. 멤버 탈퇴보다 반드시 먼저. 허브 공용 검증 토큰(GITHUB_TOKEN·MY_VERCEL_TOKEN·SUPABASE_ACCESS_TOKEN)은 다른 프로젝트에도 쓰므로 폐기하지 않는다. 서비스가 실제로 쓰는 키(Anthropic API 키 등)는 의뢰인 조직 소유이므로 남긴다.",
+      "이 프로젝트를 위해 별도로 발급한 토큰·키(의뢰인 조직에서 내 이름으로 만든 개발용 Anthropic 키, 프로젝트 전용 배포 토큰 등)를 폐기한다. 멤버 탈퇴보다 반드시 먼저. 허브 공용 검증 토큰(GITHUB_TOKEN·MY_VERCEL_TOKEN·SUPABASE_ACCESS_TOKEN)은 다른 프로젝트에도 쓰므로 폐기하지 않는다. 서비스가 실제로 쓰는 서비스 계정 키는 의뢰인 조직 소유이므로 남긴다.",
   },
   {
     key: "leave-orgs",

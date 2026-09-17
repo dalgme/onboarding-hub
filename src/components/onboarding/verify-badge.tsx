@@ -2,6 +2,7 @@ import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { ko } from "@/content/ko";
 import type { VerifyResult } from "@/lib/database.types";
+import { adminCodeText } from "@/lib/verify/copy";
 
 // 검증 3상태 배지. error를 not_found처럼 보이게 하지 않는다.
 // 다만 의뢰인 화면(side="client")에서는 error를 「제작자 확인 중」으로 부른다 —
@@ -10,9 +11,11 @@ import type { VerifyResult } from "@/lib/database.types";
 function VerifyBadge({
   result,
   side = "admin",
+  stepKey = "",
 }: {
   result: VerifyResult | null;
   side?: "admin" | "client";
+  stepKey?: string;
 }) {
   if (!result) {
     return <Badge variant="muted">{ko.status.verify.never}</Badge>;
@@ -33,8 +36,8 @@ function VerifyBadge({
       <Badge variant={variant}>{label}</Badge>
       <span className="text-xs text-muted-foreground">
         {format(new Date(result.checked_at), "MM.dd HH:mm")}
-        {side === "admin" && result.code && result.status !== "verified" && ko.admin.verifyCode[result.code]
-          ? ` · ${ko.admin.verifyCode[result.code]}`
+        {side === "admin" && result.code && result.status !== "verified" && adminCodeText(result.code, stepKey)
+          ? ` · ${adminCodeText(result.code, stepKey)}`
           : ""}
       </span>
     </span>

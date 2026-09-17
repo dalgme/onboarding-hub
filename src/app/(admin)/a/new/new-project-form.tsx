@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { createProject } from "@/app/(admin)/a/actions";
-import { OPTIONAL_STEP_TEMPLATES, plannedSteps } from "@/lib/steps";
+import { OPTIONAL_STEP_TEMPLATES, plannedSteps, skippedWith } from "@/lib/steps";
 import { ko } from "@/content/ko";
 
 const newProjectSchema = z.object({
@@ -46,7 +46,7 @@ export function NewProjectForm() {
   const preview = plannedSteps(optionalKeys).map((template) => ({
     key: template.key,
     title: template.title,
-    skipped: !includeAi && template.key === "connect-anthropic",
+    skipped: !includeAi && (template.key === "connect-anthropic" || skippedWith("connect-anthropic").includes(template.key)),
   }));
 
   async function onSubmit(values: NewProjectValues) {

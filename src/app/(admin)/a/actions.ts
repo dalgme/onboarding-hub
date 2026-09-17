@@ -7,7 +7,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdminUser } from "@/lib/auth";
-import { OPTIONAL_STEP_TEMPLATES, plannedSteps } from "@/lib/steps";
+import { OPTIONAL_STEP_TEMPLATES, plannedSteps, skippedWith } from "@/lib/steps";
 import { normalizeSlug } from "@/lib/slug";
 import { buildMagicLinkUrl } from "@/lib/magic-link";
 import { preflightBlockReason } from "@/lib/preflight";
@@ -18,6 +18,7 @@ import { classify } from "@/lib/verify/types";
 import { CONNECT_META } from "@/lib/steps";
 import { after } from "next/server";
 import { ko } from "@/content/ko";
+import { ackCopy } from "@/lib/verify/copy";
 import type { ActionResult } from "@/app/(guest)/p/[code]/actions";
 
 function revalidateProject(code: string) {
@@ -88,7 +89,7 @@ export async function createProject(
       description_md: template.description_md,
       owner_side: template.owner_side,
       verify_type: template.verify_type,
-      status: !includeAi && template.key === "connect-anthropic" ? ("skipped" as const) : ("todo" as const),
+      status: !includeAi && (template.key === "connect-anthropic" || skippedWith("connect-anthropic").includes(template.key)) ? ("skipped" as const) : ("todo" as const),
     })),
   );
   if (stepsError) return { ok: false, message: ko.common.error };
@@ -252,6 +253,15 @@ export async function adminSetStepStatus(
     .maybeSingle();
 
   if (error) return { ok: false, message: ko.common.error };
+  // 건너뛴 단계에 딸린 단계(예: Claude 초대 → 서비스 계정)도 같이 건너뛴다 — 손대지 않은(todo) 것만
+  if (status === "skipped" && updated && skippedWith(updated.key).length > 0) {
+    await supabase
+      .from("steps")
+      .update({ status: "skipped", blocked_reason: null, verified_at: null })
+      .eq("project_id", updated.project_id)
+      .in("key", [...skippedWith(updated.key)])
+      .eq("status", "todo");
+  }
   // 끝난 단계가 늘었다 — 프로젝트 상태가 앞으로 갈 조건인지 본다.
   // 내가 손으로 「확인 완료로」 누른 것도 확인이다 — 「확인됐습니다 + 다음은 …」 문구를 똑같이 올린다
   const project = (updated?.projects ?? null) as { id: string; code: string; name: string; client_name: string } | null;
@@ -973,7 +983,7 @@ export async function ackInvite(
     now,
   );
   revalidateProject(code);
-  return { ok: true, message: ko.admin.ack.notCameDone };
+  return { ok: true, message: ackCopy(row.key).notCameDone };
 }
 
 

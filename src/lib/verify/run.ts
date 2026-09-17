@@ -3,8 +3,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyGithubMembership } from "@/lib/verify/github";
 import { verifyVercelMembership } from "@/lib/verify/vercel";
 import { verifySupabaseMembership } from "@/lib/verify/supabase";
-import { classify, isVerifyCode, ownerOf, type VerifyOwner } from "@/lib/verify/types";
+import { classify, ownerOf, type VerifyOwner } from "@/lib/verify/types";
 import { ADMIN_ACK_KEYS } from "@/lib/steps";
+import { adminCodeText } from "@/lib/verify/copy";
 import { pushAdmin, minuteOf } from "@/lib/notify";
 import { onStepVerified, onVerifyClientCause } from "@/lib/outbox";
 import { advanceProjectStatus } from "@/lib/lifecycle";
@@ -247,7 +248,7 @@ export async function runVerification(
     const epoch = step.checked_at ? minuteOf(step.checked_at) : minuteOf(result.checked_at);
     after(async () => {
       if (trigger === "client" && step.status === "client_done") {
-        const label = isVerifyCode(result.code) ? ko.admin.verifyCode[result.code] : (result.detail ?? "");
+        const label = adminCodeText(result.code, step.key) ?? result.detail ?? "";
         await pushAdmin({
           ...base,
           dedupeKey: `verify_event:${step.id}:pending:${epoch}`,

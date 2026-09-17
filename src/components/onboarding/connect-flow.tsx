@@ -11,6 +11,7 @@ import { SlugInput } from "@/components/onboarding/slug-input";
 import { VerifyBadge } from "@/components/onboarding/verify-badge";
 import { cn } from "@/lib/utils";
 import { ko } from "@/content/ko";
+import { clientCodeText } from "@/lib/verify/copy";
 import { CONNECT_META } from "@/lib/steps";
 import { startStep } from "@/app/(guest)/p/[code]/actions";
 import type { StepRow, VerifyResult } from "@/lib/database.types";
@@ -239,7 +240,7 @@ export function ConnectFlow({
             </div>
             {lastResult && lastResult.status !== "verified" ? (
               <p className="text-sm leading-relaxed text-muted-foreground">
-                {(lastResult.code && ko.stepDetail.verifyCode[lastResult.code]) ??
+                {clientCodeText(lastResult.code, step.key) ??
                   (lastResult.status === "error"
                     ? ko.stepDetail.verifyErrorHint
                     : ko.stepDetail.verifyNotFoundHint)}

@@ -240,6 +240,19 @@ export const ko = {
       wrong_role: "초대는 잘 됐어요. 역할 하나만 바꿔 주시면 끝이에요. 아래 버튼에서 지정할 역할을 안내해 드립니다.",
     } as Record<string, string | undefined>,
     returnedFallback: "확인할 것이 하나 생겼습니다. 아래 안내를 따라 주시면 바로 확인해 드려요.",
+    // 단계별 덮어쓰기 — 초대가 아닌 확인(서비스 계정)은 「초대·이메일」 문장이 맞지 않는다.
+    // 없는 조합은 verifyCode / verifyCodeHome 로 떨어진다 (src/lib/verify/copy.ts)
+    verifyCodeByKey: {
+      "anthropic-service-account": {
+        await_admin_ack: "제작자가 열쇠 발급 화면에서 서비스 계정이 보이는지 확인하는 중입니다. 확인되는 대로 소식을 드릴게요.",
+        check_invite: "서비스 계정 화면에 만든 계정이 보이는지 한 번만 확인해 주세요. 목록에 있으면 그대로 두셔도 돼요 — 제가 다시 확인합니다.",
+      },
+    } as Record<string, Record<string, string | undefined> | undefined>,
+    verifyCodeHomeByKey: {
+      "anthropic-service-account": {
+        check_invite: "서비스 계정이 아직 제 쪽에서 보이지 않아요. 아래 버튼을 누르면 확인할 화면 주소가 나옵니다.",
+      },
+    } as Record<string, Record<string, string | undefined> | undefined>,
     // 검증 원인 코드 → 의뢰인 문장. 관리자 1인칭 detail 은 의뢰인 화면에 절대 그리지 않는다.
     // 원칙: 한 일은 인정, 바꿀 것은 하나, 원인은 화면 탓. 금지어: 아직·안 하셨·실패
     verifyCode: {
@@ -430,6 +443,12 @@ export const ko = {
       `▶ 초대 화면: ${p.inviteUrl}\n▶ 이메일: ${p.email} (역할: ${p.roleName})\n` +
       `목록에 없으면 위 이메일로 초대해 주시면 됩니다. 있으면 제가 수락하는 중이니 그대로 두셔도 돼요.\n` +
       `어려우시면 화면공유 20분이면 함께 끝낼 수 있어요.`,
+    rerequestServiceAccount: (p: { client: string; stepTitle: string; settingsUrl: string; stepUrl: string }) =>
+      `${p.client}님, 「${p.stepTitle}」 완료 눌러 주신 것 확인했습니다.\n` +
+      `다만 제 열쇠 발급 화면에는 서비스 계정이 아직 보이지 않아요. 아래 화면에 만든 계정이 목록에 있는지 한 번만 봐 주세요.\n` +
+      `▶ 서비스 계정 화면: ${p.settingsUrl}\n` +
+      `목록이 비어 있으면 이 프로젝트 조직(왼쪽 아래 계정 메뉴)에서 다시 만들어 주시면 됩니다. 있으면 그대로 두셔도 돼요 — 제가 다시 확인합니다.\n${p.stepUrl}\n` +
+      `어려우시면 화면공유 5분이면 함께 끝낼 수 있어요.`,
     reminderFirst: (p: { client: string; stepTitle: string; stepUrl: string; serviceName: string | null }) =>
       `${p.client}님, 「${p.stepTitle}」 진행에 막힌 곳은 없으신지 여쭙습니다.\n` +
       (p.serviceName ? `${p.serviceName} 화면이 자주 바뀌어 헷갈리기 쉬운 단계예요. ` : "") +
@@ -459,6 +478,7 @@ export const ko = {
       nextStep: (stepTitle: string) => `「${stepTitle}」 확인됨 · 다음 안내`,
       rerequestNoSlug: (serviceName: string) => `${serviceName} 주소 부탁`,
       rerequestCheckInvite: (serviceName: string) => `${serviceName} 초대 확인 부탁`,
+      rerequestServiceAccount: "Claude 서비스 계정 확인 부탁",
       adminReplied: "답글 알림",
       credentials: "접속 안내",
       scopeReady: "작업 범위 안내",
@@ -497,6 +517,37 @@ export const ko = {
       notYet: "수락했음으로 기록했다. API 에서는 아직 안 보인다 — 수락 반영까지 몇 분 걸린다. tick 이 자동으로 다시 본다.",
       notCameDone: "의뢰인 원인으로 전환했다. 「보낼 카톡」에 초대 확인 부탁 문구를 올렸다.",
     },
+    // 단계별 2탭 문구 — 「초대 메일이 왔는가」가 아닌 확인은 여기서 덮어쓴다 (src/lib/verify/copy.ts)
+    ackByKey: {
+      "anthropic-service-account": {
+        question: () => "Claude 열쇠 발급 화면의 「연결된 계정」에 서비스 계정이 보이나요?",
+        came: "보임 · 확인",
+        notCame: "안 보임",
+        notCameDone: "의뢰인 원인으로 전환했다. 「보낼 카톡」에 서비스 계정 확인 부탁 문구를 올렸다.",
+        todo: (hours: number) => `Claude 서비스 계정 확인 — 열쇠 발급 화면에서 보임/안 보임 (${hours}시간째)`,
+        pushWait: (project: string, days: number) => ({
+          title: `${project} · Claude 서비스 계정 확인 ${days}일째 내 차례`,
+          body: "열쇠 발급 화면의 「연결된 계정」에 서비스 계정이 보이는지 보고 「보임」 또는 「안 보임」을 누른다.",
+        }),
+      },
+    } as Record<
+      string,
+      | {
+          question: (service: string) => string;
+          came: string;
+          notCame: string;
+          notCameDone: string;
+          todo: (hours: number) => string;
+          pushWait: (project: string, days: number) => { title: string; body: string };
+        }
+      | undefined
+    >,
+    verifyCodeByKey: {
+      "anthropic-service-account": {
+        await_admin_ack: "서비스 계정 확인 필요 — 열쇠 발급 화면의 「연결된 계정」",
+        check_invite: "서비스 계정이 안 보임 — 의뢰인 재확인",
+      },
+    } as Record<string, Record<string, string | undefined> | undefined>,
     manualAck: {
       title: "완료 요청 확인 — 화면으로 확인할 수 없는 단계",
       waiting: (hours: number) => `완료 요청 ${hours}시간 전`,

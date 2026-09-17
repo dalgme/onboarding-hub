@@ -47,6 +47,7 @@ export function ProjectStatus({
     )
     .map((step) => ({
       stepId: step.id,
+      stepKey: step.key,
       service: CONNECT_META[step.key]?.serviceName ?? SIMPLE_CONNECT_META[step.key]?.serviceName ?? step.title,
       title: step.title,
       hoursWaiting: differenceInHours(new Date(), new Date(step.verify_result?.first_failed_at ?? step.checked_at ?? step.updated_at)),
