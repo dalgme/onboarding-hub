@@ -21,7 +21,7 @@ import type { StepStatus, VerifyResult } from "@/lib/database.types";
 
 const FIRST_AFTER_MS = 3 * 24 * 60 * 60_000;
 const SECOND_AFTER_MS = 7 * 24 * 60 * 60_000;
-export const PAYMENT_STEP_KEYS: ReadonlySet<string> = new Set(["connect-vercel", "connect-anthropic"]);
+export const PAYMENT_STEP_KEYS: ReadonlySet<string> = new Set(["connect-vercel", "connect-anthropic", "supabase-pro"]);
 const CLIENT_OPEN: ReadonlySet<StepStatus> = new Set(["todo", "doing", "returned"]);
 
 export function inReminderWindow(now: Date): boolean {

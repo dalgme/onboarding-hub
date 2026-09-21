@@ -10,6 +10,9 @@ export interface StepTemplate {
   owner_side: OwnerSide;
   verify_type: VerifyType;
   description_md: string;
+  // 선택 단계를 프로젝트에 추가할 때 「새 단계 안내」 카톡 문구에 들어가는 한 단락 — 왜 필요한지·비용.
+  // 없으면 문구는 단계 화면 링크만 안내한다
+  kakao_note?: string;
 }
 
 // 계정 연결 단계에서 쓰는 딥링크·역할·정규화 대상 slug 컬럼 매핑
@@ -84,6 +87,7 @@ export const ADMIN_ACK_KEYS: ReadonlySet<string> = new Set([
   "anthropic-service-account",
   "connect-resend",
   "connect-solapi",
+  "supabase-pro",
 ]);
 
 // 앞 단계를 건너뛰면 같이 건너뛰는 단계 — AI 없는 의뢰에서 「서비스 계정」만 남아 재촉되는 일을 막는다.
@@ -120,6 +124,47 @@ export const SIMPLE_CONNECT_META: Record<string, SimpleConnectMeta> = {
 // 의뢰 내용에 따라 골라 넣는 선택 단계 (관리 화면 단계 탭에서 추가).
 // 기본 템플릿과 같은 규칙: 여기서 복사해 넣고, 안내문 수정은 이 파일에서.
 export const OPTIONAL_STEP_TEMPLATES: StepTemplate[] = [
+  {
+    key: "supabase-pro",
+    title: "Supabase Pro 플랜으로 바꾸기",
+    owner_side: "client",
+    verify_type: "manual",
+    kakao_note:
+      "데이터 보관소(Supabase)가 지금 무료 플랜인데, 무료 플랜은 일주일 동안 아무도 안 들어오면 자동으로 멈춥니다. 학생이 접속했을 때 사이트가 안 열리는 사고가 됩니다. 저장 용량도 500MB뿐이고 자동 백업이 없어서, 운영 전에 Pro 플랜(월 $25, 약 35,000원)으로 바꿔 주셔야 합니다.\n" +
+      "참고로 이 서비스의 월 고정비는 Vercel Pro $20 + Supabase Pro $25 = 약 63,000원(환율 따라 조금 다름)이고, 도메인 연 2만 원 안팎과 AI 사용료(쓴 만큼)가 더해집니다.",
+    description_md: `서비스의 **데이터 보관소(Supabase)** 요금제를 무료에서 **Pro**로 바꾸는 단계입니다. 앞서 만들어 주신 조직은 지금 무료 플랜입니다.
+
+### 왜 필요한가
+
+- **무료 플랜은 일주일 동안 아무도 안 들어오면 자동으로 멈춥니다.** 방학이나 연휴 뒤에 학생이 접속하면 사이트가 안 열리는 사고가 됩니다. Pro는 멈추지 않습니다.
+- 무료는 저장 용량 500MB, **자동 백업 없음**입니다. Pro는 8GB에 매일 백업(7일 보관)이 포함됩니다. 학생 데이터와 응시 기록이 쌓이는 서비스라 백업이 없으면 안 됩니다.
+
+### 비용
+
+| 항목 | 월 비용 | 비고 |
+|---|---|---|
+| Supabase Pro | $25 (약 35,000원) | 조직 단위. 프로젝트 1개 기본 서버(Micro)는 포함된 크레딧으로 충당 |
+| Vercel Pro | $20 (약 28,000원) | 앞서 팀을 만들 때 안내드린 것 |
+| 도메인 | 연 15,000~25,000원 | 도메인 연결 단계에서 |
+| AI 사용료 | 쓴 만큼 | Claude 조직 크레딧에서 차감 |
+
+합쳐서 **월 6만 원대 + AI 사용료**가 이 서비스의 고정비입니다. 환율과 요금제는 바뀔 수 있으니 정확한 금액은 결제 화면 기준입니다. 자세한 계산은 [고정비 계산기](/cost)에서 볼 수 있어요.
+
+### 진행 순서
+
+1. **[Supabase 조직 목록 열기](https://supabase.com/dashboard/organizations)** — 새 탭으로 열립니다. 이 프로젝트의 조직을 누릅니다. (개인 조직이 따로 있다면 헷갈리지 않게 이름을 확인해 주세요.)
+2. 왼쪽 메뉴 **Billing** → 현재 플랜이 **Free**로 보입니다 → **Upgrade** (또는 Change plan) → **Pro** 선택.
+3. 결제 카드를 등록하고 확인을 누릅니다. 요금은 조직 단위로 매달 청구됩니다.
+4. **Spend Cap**(지출 한도) 항목이 보이면 **켜진 상태로** 두세요. 예상 밖 청구를 막는 안전장치입니다.
+5. Billing 화면에 플랜이 **Pro**로 바뀌어 보이면 끝입니다.
+
+### 자주 막히는 곳
+
+- 프로젝트가 아니라 **조직**의 요금제입니다. 프로젝트 설정 화면에는 이 메뉴가 없습니다.
+- 조직이 여러 개면 **이 프로젝트가 들어 있는 조직**에서 바꿔야 합니다. 다른 조직에 결제하면 효과가 없습니다.
+- 이미 Pro라면 바꿀 것 없이 「완료했습니다」만 눌러 주세요.
+- 결제가 부담되면 「막혔어요」를 눌러 주세요. 월 고정비를 함께 다시 정리해 드립니다.`,
+  },
   {
     key: "connect-resend",
     title: "Resend(메일 발송) 계정 만들고 초대하기",
@@ -420,6 +465,10 @@ export const DONE_CHECKLIST: Record<string, readonly string[]> = {
     "이 프로젝트의 조직(개인 조직이 아닌)에서 만들었습니다 — 왼쪽 아래 계정 메뉴로 확인",
     "Settings → Service accounts 목록에 새로 만든 서비스 계정이 보입니다",
     "Billing의 자동 충전(Auto reload)이 켜져 있는 것을 다시 확인했습니다",
+  ],
+  "supabase-pro": [
+    "이 프로젝트가 들어 있는 조직(개인 조직이 아닌)에서 바꿨습니다",
+    "Billing 화면에 플랜이 Pro로 표시됩니다",
   ],
   "connect-resend": [
     "복사한 이메일로 팀 초대를 보냈고, 멤버 목록에 대기 중으로 보입니다",

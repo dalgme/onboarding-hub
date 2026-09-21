@@ -415,7 +415,7 @@ export async function sweepOutbox(
     const projectSteps = (stepsByProject.get(row.project_id) ?? []) as StepLite[];
     const step = row.step_id ? projectSteps.find((item) => item.id === row.step_id) : undefined;
     let needed = true;
-    if (row.kind === "next_step") {
+    if (row.kind === "next_step" || row.kind === "step_added") {
       // 의뢰인이 그 뒤 포털에 들어왔거나, 카드가 가리킨 그 단계를 스스로 시작했으면 안내는 필요 없다.
       // 되돌림(한 가지만 더)은 「시작했다」가 아니다 — 고쳐 달라고 기다리는 중이라 안내가 더 필요하다
       const seen = lastSeenByProject.get(row.project_id);
@@ -526,22 +526,43 @@ export async function sweepOutbox(
   return report;
 }
 
+// 선택 단계를 프로젝트에 추가했다 → 「새 단계 안내」 문구. 왜 필요한지는 템플릿의 kakao_note 가 말한다.
+// 거둠은 next_step 과 같다(의뢰인이 접속했거나 그 단계를 시작하면 내린다)
+export async function onStepAdded(
+  project: { id: string; code: string; client_name: string },
+  step: { id: string; key: string; title: string },
+  note: string | null,
+): Promise<void> {
+  await createOutbox({
+    kind: "step_added",
+    projectId: project.id,
+    stepId: step.id,
+    dedupeKey: `step_added:${step.id}:${minuteOf(new Date())}`,
+    detail: `next:${step.id}`,
+    title: ko.outbox.titles.stepAdded(step.title),
+    body: ko.outbox.stepAdded({
+      client: project.client_name,
+      stepTitle: step.title,
+      note,
+      stepUrl: `${portalUrl(project.code)}/steps/${step.key}`,
+    }),
+    push: null,
+  });
+}
+
 // 내가 「초대 안 왔음」을 눌렀다 → 의뢰인에게 초대 확인을 부탁하는 문구. Vercel·Supabase·수동 단계 공통
 export async function onAdminNotCame(step: StepInfo, slug: string | null, adminEmail: string, now: Date): Promise<void> {
-  // 초대가 아닌 확인(서비스 계정) — 「초대 화면·이메일」 문구 대신 그 화면을 가리킨다
-  if (step.key === "anthropic-service-account") {
+  // 초대가 아닌 확인(서비스 계정·요금제) — 「초대 화면·이메일」 문구 대신 단계별 문구(ko.admin.ackByKey)가 그 화면을 가리킨다
+  const own = ko.admin.ackByKey[step.key];
+  if (own) {
+    const text = own.rerequest({ client: step.clientName, stepTitle: step.title, stepUrl: `${portalUrl(step.projectCode)}/steps/${step.key}` });
     await createOutbox({
       kind: "rerequest",
       projectId: step.projectId,
       stepId: step.id,
       dedupeKey: `rerequest:${step.id}:not_came:${minuteOf(now)}`,
-      title: ko.outbox.titles.rerequestServiceAccount,
-      body: ko.outbox.rerequestServiceAccount({
-        client: step.clientName,
-        stepTitle: step.title,
-        settingsUrl: "https://platform.claude.com/settings/service-accounts",
-        stepUrl: `${portalUrl(step.projectCode)}/steps/${step.key}`,
-      }),
+      title: text.title,
+      body: text.body,
       detail: "check_invite",
       push: null,
     });

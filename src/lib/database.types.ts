@@ -36,6 +36,7 @@ export type VerifyResult = {
 export type NoticeKind =
   | "credentials"
   | "next_step"
+  | "step_added"
   | "rerequest"
   | "reminder"
   | "escalation"

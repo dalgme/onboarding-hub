@@ -11,7 +11,7 @@ import { OPTIONAL_STEP_TEMPLATES, plannedSteps, skippedWith } from "@/lib/steps"
 import { normalizeSlug } from "@/lib/slug";
 import { buildMagicLinkUrl } from "@/lib/magic-link";
 import { preflightBlockReason } from "@/lib/preflight";
-import { onAdminNotCame, onAdminReplied, onStepVerified, portalUrl, recordCredentialsSent } from "@/lib/outbox";
+import { onAdminNotCame, onAdminReplied, onStepVerified, portalUrl, recordCredentialsSent, onStepAdded } from "@/lib/outbox";
 import { returnStep, runVerification } from "@/lib/verify/run";
 import { advanceProjectStatus, onLinkPinned, onScopeAgreed } from "@/lib/lifecycle";
 import { classify } from "@/lib/verify/types";
@@ -321,16 +321,29 @@ export async function addOptionalStep(
     await supabase.from("steps").update({ order_index: row.order_index + 1 }).eq("id", row.id);
   }
 
-  const { error } = await supabase.from("steps").insert({
-    project_id: projectId,
-    order_index: insertAt,
-    key: template.key,
-    title: template.title,
-    description_md: template.description_md,
-    owner_side: template.owner_side,
-    verify_type: template.verify_type,
-  });
-  if (error) return { ok: false, message: ko.common.error };
+  const { data: inserted, error } = await supabase
+    .from("steps")
+    .insert({
+      project_id: projectId,
+      order_index: insertAt,
+      key: template.key,
+      title: template.title,
+      description_md: template.description_md,
+      owner_side: template.owner_side,
+      verify_type: template.verify_type,
+    })
+    .select("id, projects(id, code, client_name)")
+    .single();
+  if (error || !inserted) return { ok: false, message: ko.common.error };
+  // 의뢰인에게 「새 단계가 생겼다」를 알리는 카톡 문구 — 손으로 쓰지 않는다
+  const project = (inserted.projects ?? null) as unknown as { id: string; code: string; client_name: string } | null;
+  if (project) {
+    const stepInfo = { id: inserted.id, key: template.key, title: template.title };
+    const note = template.kakao_note ?? null;
+    after(async () => {
+      await onStepAdded(project, stepInfo, note);
+    });
+  }
   revalidateProject(code);
   return { ok: true };
 }

@@ -247,10 +247,17 @@ export const ko = {
         await_admin_ack: "제작자가 열쇠 발급 화면에서 서비스 계정이 보이는지 확인하는 중입니다. 확인되는 대로 소식을 드릴게요.",
         check_invite: "서비스 계정 화면에 만든 계정이 보이는지 한 번만 확인해 주세요. 목록에 있으면 그대로 두셔도 돼요 — 제가 다시 확인합니다.",
       },
+      "supabase-pro": {
+        await_admin_ack: "제작자가 결제 화면에서 Pro로 바뀌었는지 확인하는 중입니다. 확인되는 대로 소식을 드릴게요.",
+        check_invite: "결제 화면(Billing)에 플랜이 Pro로 표시되는지 한 번만 확인해 주세요. Pro로 보이면 그대로 두셔도 돼요 — 제가 다시 확인합니다.",
+      },
     } as Record<string, Record<string, string | undefined> | undefined>,
     verifyCodeHomeByKey: {
       "anthropic-service-account": {
         check_invite: "서비스 계정이 아직 제 쪽에서 보이지 않아요. 아래 버튼을 누르면 확인할 화면 주소가 나옵니다.",
+      },
+      "supabase-pro": {
+        check_invite: "Pro 전환이 아직 제 쪽에서 보이지 않아요. 아래 버튼을 누르면 확인할 화면 안내가 나옵니다.",
       },
     } as Record<string, Record<string, string | undefined> | undefined>,
     // 검증 원인 코드 → 의뢰인 문장. 관리자 1인칭 detail 은 의뢰인 화면에 절대 그리지 않는다.
@@ -443,12 +450,11 @@ export const ko = {
       `▶ 초대 화면: ${p.inviteUrl}\n▶ 이메일: ${p.email} (역할: ${p.roleName})\n` +
       `목록에 없으면 위 이메일로 초대해 주시면 됩니다. 있으면 제가 수락하는 중이니 그대로 두셔도 돼요.\n` +
       `어려우시면 화면공유 20분이면 함께 끝낼 수 있어요.`,
-    rerequestServiceAccount: (p: { client: string; stepTitle: string; settingsUrl: string; stepUrl: string }) =>
-      `${p.client}님, 「${p.stepTitle}」 완료 눌러 주신 것 확인했습니다.\n` +
-      `다만 제 열쇠 발급 화면에는 서비스 계정이 아직 보이지 않아요. 아래 화면에 만든 계정이 목록에 있는지 한 번만 봐 주세요.\n` +
-      `▶ 서비스 계정 화면: ${p.settingsUrl}\n` +
-      `목록이 비어 있으면 이 프로젝트 조직(왼쪽 아래 계정 메뉴)에서 다시 만들어 주시면 됩니다. 있으면 그대로 두셔도 돼요 — 제가 다시 확인합니다.\n${p.stepUrl}\n` +
-      `어려우시면 화면공유 5분이면 함께 끝낼 수 있어요.`,
+    // 선택 단계를 프로젝트에 추가했을 때 — 왜 필요한지(note)는 템플릿이 말하고, 방법은 단계 화면이 말한다
+    stepAdded: (p: { client: string; stepTitle: string; note: string | null; stepUrl: string }) =>
+      `${p.client}님, 포털에 「${p.stepTitle}」 단계를 하나 추가했습니다.\n` +
+      (p.note ? `${p.note}\n` : "") +
+      `방법은 아래 화면에 순서대로 적어 두었어요. 궁금한 점은 「질문·요청」에 남겨 주세요.\n${p.stepUrl}`,
     reminderFirst: (p: { client: string; stepTitle: string; stepUrl: string; serviceName: string | null }) =>
       `${p.client}님, 「${p.stepTitle}」 진행에 막힌 곳은 없으신지 여쭙습니다.\n` +
       (p.serviceName ? `${p.serviceName} 화면이 자주 바뀌어 헷갈리기 쉬운 단계예요. ` : "") +
@@ -478,7 +484,7 @@ export const ko = {
       nextStep: (stepTitle: string) => `「${stepTitle}」 확인됨 · 다음 안내`,
       rerequestNoSlug: (serviceName: string) => `${serviceName} 주소 부탁`,
       rerequestCheckInvite: (serviceName: string) => `${serviceName} 초대 확인 부탁`,
-      rerequestServiceAccount: "Claude 서비스 계정 확인 부탁",
+      stepAdded: (stepTitle: string) => `「${stepTitle}」 단계 추가 안내`,
       adminReplied: "답글 알림",
       credentials: "접속 안내",
       scopeReady: "작업 범위 안내",
@@ -529,6 +535,36 @@ export const ko = {
           title: `${project} · Claude 서비스 계정 확인 ${days}일째 내 차례`,
           body: "열쇠 발급 화면의 「연결된 계정」에 서비스 계정이 보이는지 보고 「보임」 또는 「안 보임」을 누른다.",
         }),
+        // 「안 보임」 → 의뢰인에게 보낼 재요청 문구 (초대 문장이 아니라 그 화면을 가리킨다)
+        rerequest: (p: { client: string; stepTitle: string; stepUrl: string }) => ({
+          title: "Claude 서비스 계정 확인 부탁",
+          body:
+            `${p.client}님, 「${p.stepTitle}」 완료 눌러 주신 것 확인했습니다.\n` +
+            `다만 제 열쇠 발급 화면에는 서비스 계정이 아직 보이지 않아요. 아래 화면에 만든 계정이 목록에 있는지 한 번만 봐 주세요.\n` +
+            `▶ 서비스 계정 화면: https://platform.claude.com/settings/service-accounts\n` +
+            `목록이 비어 있으면 이 프로젝트 조직(왼쪽 아래 계정 메뉴)에서 다시 만들어 주시면 됩니다. 있으면 그대로 두셔도 돼요 — 제가 다시 확인합니다.\n${p.stepUrl}\n` +
+            `어려우시면 화면공유 5분이면 함께 끝낼 수 있어요.`,
+        }),
+      },
+      "supabase-pro": {
+        question: () => "Supabase 조직 Billing 화면에 플랜이 Pro로 보이나요?",
+        came: "Pro로 보임",
+        notCame: "아직 Free",
+        notCameDone: "의뢰인 원인으로 전환했다. 「보낼 카톡」에 Pro 전환 재확인 문구를 올렸다.",
+        todo: (hours: number) => `Supabase Pro 전환 확인 — Billing 화면에서 Pro/Free (${hours}시간째)`,
+        pushWait: (project: string, days: number) => ({
+          title: `${project} · Supabase Pro 전환 확인 ${days}일째 내 차례`,
+          body: "Supabase 조직 Billing 화면에서 플랜이 Pro인지 보고 「Pro로 보임」 또는 「아직 Free」를 누른다.",
+        }),
+        rerequest: (p: { client: string; stepTitle: string; stepUrl: string }) => ({
+          title: "Supabase Pro 전환 확인 부탁",
+          body:
+            `${p.client}님, 「${p.stepTitle}」 완료 눌러 주신 것 확인했습니다.\n` +
+            `다만 결제 화면에는 아직 Free로 보여요. 조직 Billing 화면에서 플랜이 Pro로 바뀌었는지 한 번만 봐 주세요.\n` +
+            `▶ 조직 목록: https://supabase.com/dashboard/organizations → 이 프로젝트 조직 → Billing\n` +
+            `결제까지 끝났다면 반영에 몇 분 걸릴 수 있어 그대로 두셔도 돼요 — 제가 다시 확인합니다. 다른 조직에서 바꾸셨다면 이 프로젝트 조직에서 다시 부탁드립니다.\n${p.stepUrl}\n` +
+            `어려우시면 화면공유 5분이면 함께 끝낼 수 있어요.`,
+        }),
       },
     } as Record<
       string,
@@ -539,6 +575,7 @@ export const ko = {
           notCameDone: string;
           todo: (hours: number) => string;
           pushWait: (project: string, days: number) => { title: string; body: string };
+          rerequest: (p: { client: string; stepTitle: string; stepUrl: string }) => { title: string; body: string };
         }
       | undefined
     >,
@@ -546,6 +583,10 @@ export const ko = {
       "anthropic-service-account": {
         await_admin_ack: "서비스 계정 확인 필요 — 열쇠 발급 화면의 「연결된 계정」",
         check_invite: "서비스 계정이 안 보임 — 의뢰인 재확인",
+      },
+      "supabase-pro": {
+        await_admin_ack: "Supabase Pro 전환 확인 필요 — 조직 Billing 화면",
+        check_invite: "Supabase 아직 Free — 의뢰인 재확인",
       },
     } as Record<string, Record<string, string | undefined> | undefined>,
     manualAck: {
