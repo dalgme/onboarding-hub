@@ -389,7 +389,8 @@ export const STEP_TEMPLATE: StepTemplate[] = [
 1. **[서비스 계정 화면 열기](https://platform.claude.com/settings/service-accounts)** — 새 탭으로 열립니다. 로그인이 필요하면 앞 단계에서 만든 계정으로 로그인합니다.
 2. 조직이 여러 개라면 **왼쪽 아래 계정 메뉴**에서 이 프로젝트의 조직이 선택되어 있는지 확인합니다. (왼쪽 위는 워크스페이스 선택이라 다릅니다.)
 3. **Create service account**(서비스 계정 만들기)를 누르고 이름을 적습니다. 서비스 이름 뒤에 \`-prod\` 를 붙이면 알아보기 쉽습니다. 예: \`shop-prod\`
-4. 끝입니다. 워크스페이스에 따로 추가하지 않으셔도 됩니다 — 기본 워크스페이스에는 자동으로 포함됩니다.
+4. **조직 역할(Organization role)은 「개발자(Developer)」**를 고릅니다. 관리자(Admin)는 고르지 않습니다 — 이 계정이 할 일은 AI 호출뿐이라 그 이상의 권한은 열쇠가 새었을 때 피해만 키웁니다.
+5. 워크스페이스는 기본(Default) 그대로 두고 만들기를 누르면 끝입니다.
 
 ### ② 이후는 제가
 
@@ -463,6 +464,7 @@ export const DONE_CHECKLIST: Record<string, readonly string[]> = {
   ],
   "anthropic-service-account": [
     "이 프로젝트의 조직(개인 조직이 아닌)에서 만들었습니다 — 왼쪽 아래 계정 메뉴로 확인",
+    "조직 역할을 「개발자(Developer)」로 골랐습니다 (관리자 아님)",
     "Settings → Service accounts 목록에 새로 만든 서비스 계정이 보입니다",
     "Billing의 자동 충전(Auto reload)이 켜져 있는 것을 다시 확인했습니다",
   ],
