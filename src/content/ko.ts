@@ -679,6 +679,9 @@ export const ko = {
       pushNoAck: "지난 7일간 폰에서 열린 알림이 없다 — 알림이 실제로 오는지 「테스트」로 확인",
       cronNoSecret: "CRON_SECRET 이 없어 자동 점검(크론)이 닫혀 있다 — Vercel 환경변수에 추가 후 Redeploy",
       cronStale: "자동 점검(크론)이 45분 넘게 완주하지 않았다 — Vercel Cron 상태 확인",
+      siteUrlMismatch: (configured: string, deployed: string) =>
+        `문구에 들어가는 허브 주소(${configured})가 실제 배포 도메인(${deployed})과 다르다 — 카톡 링크가 404 가 된다. Vercel 환경변수 SITE_URL 을 고치거나 지운다(지우면 배포 도메인을 자동으로 쓴다)`,
+      siteUrlMissing: "허브 공개 주소를 알 수 없다 — Vercel 환경변수 SITE_URL 을 넣거나, 프로젝트 설정에서 시스템 환경변수 자동 노출을 켠다",
       otpMismatch: (actualHours: number, expectedHours: number) =>
         `로그인 링크 실제 유효시간은 ${actualHours}시간인데 안내는 ${expectedHours}시간이다 — Supabase Auth › Email OTP Expiration 을 맞춘다`,
     },

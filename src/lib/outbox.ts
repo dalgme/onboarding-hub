@@ -4,6 +4,7 @@ import { pushAdmin, dayKst, minuteOf } from "@/lib/notify";
 import { CONNECT_META, SIMPLE_CONNECT_META } from "@/lib/steps";
 import { ko } from "@/content/ko";
 import { redact } from "@/lib/redact";
+import { siteUrl } from "@/lib/site";
 import { returnStep, runVerification } from "@/lib/verify/run";
 import type { NoticeKind, NoticeRow, StepStatus, VerifyResult } from "@/lib/database.types";
 
@@ -52,8 +53,7 @@ const QUIET_START_KST = 21; // 적체 알림은 09~21시 KST 에만
 const QUIET_END_KST = 9;
 
 export function portalUrl(code: string): string {
-  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "";
-  return `${site}/p/${code}`;
+  return `${siteUrl()}/p/${code}`;
 }
 
 function inWakingHours(now: Date): boolean {

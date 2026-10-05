@@ -1,4 +1,5 @@
 import webpush from "web-push";
+import { siteUrl } from "@/lib/site";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { redact } from "@/lib/redact";
 
@@ -42,7 +43,7 @@ function isDeadSubscription(error: webpush.WebPushError): boolean {
 }
 
 function vapidSubject(): string {
-  const site = process.env.NEXT_PUBLIC_SITE_URL ?? "";
+  const site = siteUrl();
   return site.startsWith("https://") ? site : "mailto:admin@example.com";
 }
 

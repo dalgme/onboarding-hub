@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { siteUrl } from "@/lib/site";
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { ExternalLink } from "lucide-react";
@@ -115,8 +116,7 @@ export default async function AdminProjectPage({
   const stepTitles = Object.fromEntries(
     allSteps.map((step) => [step.id, step.title]),
   );
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "";
-  const portalUrl = `${siteUrl}/p/${code}`;
+  const portalUrl = `${siteUrl()}/p/${code}`;
 
   // 범위 확정 이후 쌓인 요청 수 = 범위 증가분
   const requestsSinceAgreed = project.scope_agreed_at

@@ -19,6 +19,7 @@ import { CONNECT_META } from "@/lib/steps";
 import { after } from "next/server";
 import { ko } from "@/content/ko";
 import { ackCopy } from "@/lib/verify/copy";
+import { siteUrl } from "@/lib/site";
 import type { ActionResult } from "@/app/(guest)/p/[code]/actions";
 
 function revalidateProject(code: string) {
@@ -754,8 +755,7 @@ export async function generateGuestMagicLink(
   const headerList = await headers();
   const host = headerList.get("host");
   const proto = headerList.get("x-forwarded-proto") ?? "https";
-  const origin =
-    process.env.NEXT_PUBLIC_SITE_URL ?? (host ? `${proto}://${host}` : "");
+  const origin = siteUrl() || (host ? `${proto}://${host}` : "");
 
   const admin = createAdminClient();
   let { data, error } = await admin.auth.admin.generateLink({

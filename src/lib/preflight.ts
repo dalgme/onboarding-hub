@@ -4,6 +4,7 @@ import { checkVerifyTokens, type TokenHealth } from "@/lib/verify/health";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { pushConfigured } from "@/lib/push";
 import { magicLinkTtlHours } from "@/lib/magic-link";
+import { siteUrl, siteUrlMismatch } from "@/lib/site";
 import { ko } from "@/content/ko";
 
 // 사전 점검(preflight) — 의뢰인에게 접속 정보를 만들기 전에 「의뢰인 초대를 직접
@@ -94,6 +95,14 @@ async function infraIssues(): Promise<PreflightIssue[]> {
   if (!process.env.CRON_SECRET) issues.push({ key: "cron", level: "yellow", message: copy.cronNoSecret });
   else if (!finished || Date.now() - new Date(finished).getTime() > 45 * 60_000) {
     issues.push({ key: "cron", level: "yellow", message: copy.cronStale });
+  }
+  // P12 허브 공개 주소 — 문구에 들어가는 주소가 실제 배포 도메인과 다르면 모든 카톡 링크가 404 다.
+  // 운영(Vercel)인데 주소를 전혀 알 수 없으면 링크가 상대경로로 나가므로 빨강(발급 차단)
+  const mismatch = siteUrlMismatch();
+  if (mismatch) {
+    issues.push({ key: "site_url", level: "yellow", message: copy.siteUrlMismatch(mismatch.configured, mismatch.deployed) });
+  } else if (process.env.VERCEL && !siteUrl()) {
+    issues.push({ key: "site_url", level: "red", message: copy.siteUrlMissing });
   }
   // P11 로그인 링크 유효시간 — Supabase 설정(mailer_otp_exp)과 안내 숫자가 같은가
   const token = process.env.SUPABASE_ACCESS_TOKEN;
