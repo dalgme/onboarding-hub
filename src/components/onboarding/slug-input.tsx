@@ -33,7 +33,8 @@ export function SlugInput({
   projectId: string;
   projectCode: string;
   currentSlug: string | null;
-  onSaved?: () => void;
+  // 저장된(정규화된) 이름을 부모에게 넘긴다 — 부모가 서버 재렌더를 기다리지 않고 다음 단계를 그린다
+  onSaved?: (slug: string) => void;
 }) {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
@@ -62,7 +63,7 @@ export function SlugInput({
       return;
     }
     router.refresh();
-    onSaved?.();
+    onSaved?.(result.normalizedSlug ?? preview);
   }
 
   return (

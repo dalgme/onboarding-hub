@@ -17,14 +17,21 @@ function authorized(request: NextRequest): boolean {
   return timingSafeEqual(header, expected);
 }
 
+// 운영 DB 주소는 절대 루프백이 아니다 — 루프백이면 qa/ 하네스의 모의 서버다
+function allowNowOverride(): boolean {
+  if (process.env.NODE_ENV !== "production") return true;
+  return /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?(\/|$)/.test(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+}
+
 export async function GET(request: NextRequest) {
   if (!authorized(request)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  // 시각 주입은 로컬 검수 전용(프로덕션에서는 무시) — 리마인드 창·09:00 요약처럼 시각에 매인 판정을 재현한다
+  // 시각 주입은 로컬 검수 전용 — 리마인드 창·09:00 요약처럼 시각에 매인 판정을 재현한다.
+  // 운영에서는 무시한다: 개발 모드이거나, DB 주소가 루프백(모의 Supabase = `next start` 검수)일 때만 받는다
   const override = request.nextUrl.searchParams.get("now");
   const now =
-    process.env.NODE_ENV !== "production" && override && !Number.isNaN(Date.parse(override))
+    allowNowOverride() && override && !Number.isNaN(Date.parse(override))
       ? new Date(override)
       : new Date();
   const report = await runTick(now);

@@ -39,6 +39,16 @@ pnpm typecheck
 pnpm build
 ```
 
+## 검수 (배포 전)
+
+```bash
+qa/run.sh            # 모의 Supabase·외부 API 로 브라우저 검수 전부 (실제 서비스에 닿지 않는다)
+qa/run.sh portal     # 이름이 맞는 스위트만
+```
+
+바깥으로 나가는 호출이 하나도 없는 운영 빌드를 Playwright 로 돌린다. 구성과 스위트 목록은
+[qa/README.md](./qa/README.md). 기능을 바꾸면 통과시킨 뒤 배포하고, 새 흐름에는 스위트를 보탠다.
+
 ## 운영 흐름
 
 1. `/a/new`에서 프로젝트 생성 → 온보딩 단계가 템플릿(`src/lib/steps.ts`)에서

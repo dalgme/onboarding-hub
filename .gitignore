@@ -28,3 +28,7 @@ next-env.d.ts
 
 # vercel
 .vercel
+
+# qa harness
+/qa/node_modules
+/qa/.tmp

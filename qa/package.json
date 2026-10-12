@@ -1,0 +1,13 @@
+{
+  "name": "onboarding-hub-qa",
+  "private": true,
+  "type": "module",
+  "description": "브라우저 검수 하네스 — 모의 Supabase + 외부 API 가로채기 + Playwright 시나리오 (앱 의존성과 분리)",
+  "scripts": {
+    "qa": "bash ./run.sh",
+    "mock": "node ./mock/server.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

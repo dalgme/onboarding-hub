@@ -48,12 +48,14 @@ export function ConnectFlow({
   const router = useRouter();
   // 되돌림(한 가지만 더)은 원인이 있는 단계로 바로 데려간다
   const returnedCode = step.status === "returned" ? step.verify_result?.code : undefined;
+  // 확인 결과가 한 번이라도 있으면 확인 단계에서 시작한다 — 「연결 확인하기」 뒤 서버 재렌더로 이 컴포넌트가
+  // 다시 마운트될 때(key 가 checked_at) 초대 단계로 튕겨 방금 본 결과가 사라지던 문제
   const [stage, setStage] = useState<Stage>(
     returnedCode === "no_slug" || returnedCode === "org_not_found" || returnedCode === "personal_account"
       ? "slug"
       : returnedCode
         ? "invite"
-        : step.status === "client_done"
+        : step.status === "client_done" || step.verify_result
           ? "verify"
           : currentSlug
             ? "invite"
@@ -63,6 +65,11 @@ export function ConnectFlow({
   const [lastResult, setLastResult] = useState<VerifyResult | null>(
     step.verify_result,
   );
+  // 이 화면에서 저장한 이름은 서버 재렌더(router.refresh)보다 먼저 믿는다.
+  // 「만들었습니다」의 startStep 과 이름 저장의 재검증 트리가 엇갈려 적용되면 서버 prop 이 잠깐 옛값(null)으로
+  // 돌아와 초대 단계 대신 빈 입력칸이 다시 뜨던 경합(검수 하네스 5회 중 1회 재현)을 막는다
+  const [savedSlug, setSavedSlug] = useState<string | null>(null);
+  const slug = savedSlug ?? currentSlug;
 
   const isVerified = step.status === "verified";
 
@@ -175,14 +182,17 @@ export function ConnectFlow({
               stepKey={step.key}
               projectId={projectId}
               projectCode={projectCode}
-              currentSlug={currentSlug}
-              onSaved={() => setStage("invite")}
+              currentSlug={slug}
+              onSaved={(value) => {
+                setSavedSlug(value);
+                setStage("invite");
+              }}
             />
           </CardContent>
         </Card>
       ) : null}
 
-      {stage === "invite" && currentSlug ? (
+      {stage === "invite" && slug ? (
         <div className="flex flex-col gap-3">
           <Card>
             <CardHeader>
@@ -202,7 +212,7 @@ export function ConnectFlow({
                 {ko.stepDetail.inviteHint}
               </p>
               <a
-                href={meta.inviteUrl(currentSlug)}
+                href={meta.inviteUrl(slug)}
                 target="_blank"
                 rel="noreferrer noopener"
                 className="text-center text-sm font-medium text-primary underline"
@@ -217,7 +227,7 @@ export function ConnectFlow({
         </div>
       ) : null}
 
-      {stage === "invite" && !currentSlug ? (
+      {stage === "invite" && !slug ? (
         <Card>
           <CardContent className="p-5">
             <SlugInput
@@ -225,7 +235,8 @@ export function ConnectFlow({
               stepKey={step.key}
               projectId={projectId}
               projectCode={projectCode}
-              currentSlug={currentSlug}
+              currentSlug={slug}
+              onSaved={(value) => setSavedSlug(value)}
             />
           </CardContent>
         </Card>
@@ -247,7 +258,7 @@ export function ConnectFlow({
               </p>
             ) : null}
             {/* 의뢰인이 고칠 일이면 문장 옆에 바로 누를 것을 둔다 — 「위 이메일」을 찾아 헤매지 않게 */}
-            {lastResult && (lastResult.code === "check_invite" || lastResult.code === "wrong_role") && currentSlug ? (
+            {lastResult && (lastResult.code === "check_invite" || lastResult.code === "wrong_role") && slug ? (
               <div className="flex flex-col gap-2">
                 {lastResult.code === "wrong_role" ? (
                   <p className="rounded-md bg-warning/10 px-3 py-2 text-sm font-medium text-warning">
@@ -257,7 +268,7 @@ export function ConnectFlow({
                   <CopyButton value={inviteEmail} label={ko.stepDetail.inviteCopyEmail} size="lg" className="w-full" />
                 )}
                 <a
-                  href={meta.inviteUrl(currentSlug)}
+                  href={meta.inviteUrl(slug)}
                   target="_blank"
                   rel="noreferrer noopener"
                   className="text-center text-sm font-medium text-primary underline"
